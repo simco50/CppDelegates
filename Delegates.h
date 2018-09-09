@@ -248,7 +248,7 @@ public:
 
 	//Create a SinglecastDelegate instance bound with member function
 	template<typename T, typename... Args2>
-	static SinglecastDelegate CreateRaw(T* pObject, RetVal(T::*pFunction)(Args...), Args2... args)
+	static SinglecastDelegate CreateRaw(T* pObject, RetVal(T::*pFunction)(Args...), Args2&&... args)
 	{
 		SinglecastDelegate NewDelegate;
 		NewDelegate.BindRaw(pObject, pFunction, std::forward<Args2>(args)...);
@@ -257,7 +257,7 @@ public:
 
 	//Create a SinglecastDelegate instance bound with a static/global function
 	template<typename... Args2>
-	static SinglecastDelegate CreateStatic(RetVal(*pFunction)(Args...), Args2... args)
+	static SinglecastDelegate CreateStatic(RetVal(*pFunction)(Args...), Args2&&... args)
 	{
 		SinglecastDelegate NewDelegate;
 		NewDelegate.BindStatic(pFunction, std::forward<Args2>(args)...);
@@ -266,7 +266,7 @@ public:
 
 	//Create a SinglecastDelegate instance bound with a lambda
 	template<typename LambdaType, typename... Args2>
-	static SinglecastDelegate CreateLambda(LambdaType&& lambda, Args2... args)
+	static SinglecastDelegate CreateLambda(LambdaType&& lambda, Args2&&... args)
 	{
 		SinglecastDelegate NewDelegate;
 		NewDelegate.BindLambda(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...);
@@ -275,7 +275,7 @@ public:
 
 	//Create a SinglecastDelegate instance bound with member function using a shared_ptr
 	template<typename T, typename... Args2>
-	static SinglecastDelegate CreateSP(std::shared_ptr<T> pObject, RetVal(T::*pFunction)(Args...), Args2... args)
+	static SinglecastDelegate CreateSP(std::shared_ptr<T> pObject, RetVal(T::*pFunction)(Args...), Args2&&... args)
 	{
 		SinglecastDelegate NewDelegate;
 		NewDelegate.BindStatic(pObject, pFunction, std::forward<Args2>(args)...);
@@ -284,28 +284,28 @@ public:
 
 	//Bind a member function
 	template<typename T, typename... Args2>
-	void BindRaw(T* pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
+	void BindRaw(T* pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		m_pEvent = std::make_shared<RawDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, args...);
+		m_pEvent = std::make_shared<RawDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
 	}
 
 	//Bind a static/global function
 	template<typename... Args2>
-	void BindStatic(RetVal(*pFunction)(Args..., Args2...), Args2... args)
+	void BindStatic(RetVal(*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		m_pEvent = std::make_shared<StaticDelegate<RetVal (Args...), Args2...>>(pFunction, args...);
+		m_pEvent = std::make_shared<StaticDelegate<RetVal (Args...), Args2...>>(pFunction, std::forward<Args2>(args)...);
 	}
 
 	//Bind a lambda
 	template<typename LambdaType, typename... Args2>
-	void BindLambda(LambdaType&& lambda, Args2... args)
+	void BindLambda(LambdaType&& lambda, Args2&&... args)
 	{
 		m_pEvent = std::make_shared<LambdaDelegate<LambdaType, RetVal(Args...), Args2...>>(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...);
 	}
 
 	//Bind a member function with a shared_ptr object
 	template<typename T, typename... Args2>
-	void BindSP(std::shared_ptr<T> pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
+	void BindSP(std::shared_ptr<T> pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2&&... args)
 	{
 		m_pEvent = std::make_shared<SPDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
 	}
