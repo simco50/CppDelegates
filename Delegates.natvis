@@ -4,15 +4,24 @@
 		<DisplayString Condition="m_Events.size()==0">Unbound</DisplayString>
 		<DisplayString>Bound: {m_Events.size()}</DisplayString>
 		<Expand>
-			<Item Name="Elements" ExcludeView="simple">m_Events.size()</Item>
+			<Item Name="Elements" ExcludeView="simple">m_Events</Item>
 		</Expand>
 	</Type>
-	<Type Name="SinglecastDelegate&lt;*&gt;">
-		<DisplayString Condition="m_pEvent==0xcccccccc">Invalid</DisplayString>
-		<DisplayString Condition="m_pEvent==0">Unbound</DisplayString>
+	
+	<Type Name="DelegateHandler&lt;*&gt;">
+		<DisplayString Condition="m_Handle.m_Id==-1">Unbound</DisplayString>
+		<DisplayString Condition="m_Handle.m_Id&lt;0">Invalid</DisplayString>
+		<DisplayString>Bound [ID={m_Handle.m_Id}]</DisplayString>
 		<Expand>
-			<Item Name="l" ExcludeView="simple">"$T1 $T2 $T3"</Item>
-			<Item Name="Payload" ExcludeView="simple">m_pEvent->m_Payload</Item>
+			<Item Name="Allocation" ExcludeView="simple">m_Allocator</Item>
+			<Item Name="Stack" ExcludeView="simple">(IDelegateT*)m_Allocator.Buffer</Item>
+			<Item Name="Heap" ExcludeView="simple">(IDelegateT*)m_Allocator.pPtr</Item>
 		</Expand>
+	</Type>
+
+	<Type Name="InlineAllocator&lt;*&gt;">
+		<DisplayString Condition="m_Size==0">Empty</DisplayString>
+		<DisplayString Condition="m_Size&gt;$T1">Heap: {m_Size} bytes</DisplayString>
+		<DisplayString Condition="m_Size&lt;=$T1">Stack: {m_Size} bytes</DisplayString>
 	</Type>
 </AutoVisualizer>
