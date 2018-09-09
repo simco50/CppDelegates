@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?> 
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+	<Type Name="MulticastDelegate&lt;*&gt;">
+		<DisplayString Condition="m_Events.size()==0">Unbound</DisplayString>
+		<DisplayString>Bound: {m_Events.size()}</DisplayString>
+		<Expand>
+			<Item Name="Elements" ExcludeView="simple">m_Events.size()</Item>
+		</Expand>
+	</Type>
+	<Type Name="SinglecastDelegate&lt;*&gt;">
+		<DisplayString Condition="m_pEvent==0xcccccccc">Invalid</DisplayString>
+		<DisplayString Condition="m_pEvent==0">Unbound</DisplayString>
+		<Expand>
+			<Item Name="l" ExcludeView="simple">"$T1 $T2 $T3"</Item>
+			<Item Name="Payload" ExcludeView="simple">m_pEvent->m_Payload</Item>
+		</Expand>
+	</Type>
+</AutoVisualizer>
