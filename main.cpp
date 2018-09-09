@@ -2,11 +2,13 @@
 #include <iostream>
 #include <memory>
 
+#include <vld.h>
+
 #define START_TEST() \
-std::cout << "----- [" << __func__ << "] -----" << std::endl << std::endl
+std::cout << "----- [" << __func__ << "] -----" << std::endl; { std::cout << std::endl \
 
 #define END_TEST() \
-std::cout << std::endl << "------------------------------------" << std::endl << std::endl
+std::cout << std::endl; } std::cout << std::endl << "------------------------------------" << std::endl << std::endl
 
 struct Foo
 {
@@ -35,7 +37,7 @@ void SinglecastDelegateTest()
 	START_TEST();
 
 	SinglecastDelegate<int, float> del;
-	del.BindLambda([](float a) 
+	del.BindLambda([](float a)
 	{
 		std::cout << "Lambda delegate parameter: " << a << std::endl;
 		return 10;
@@ -53,6 +55,11 @@ void SinglecastDelegateTest()
 	del.BindSP(pFoo, &Foo::BarInt);
 	std::cout << "SP delegate return value: " << del.Execute(20) << std::endl;
 
+
+	SinglecastDelegate<int, float> led;
+	led = std::move(del);
+	led.Execute(10);
+
 	END_TEST();
 }
 
@@ -61,7 +68,7 @@ void MulticastDelegateTest()
 	START_TEST();
 
 	MulticastDelegate<float> del;
-	del.AddLambda([](float a)
+	/*del.AddLambda([](float a)
 	{
 		std::cout << "Lambda delegate parameter: " << a << std::endl;
 	});
@@ -69,12 +76,18 @@ void MulticastDelegateTest()
 	del.AddStatic(&Foo::StaticBarVoid);
 
 	Foo foo;
-	del.AddRaw(&foo, &Foo::BarVoid);
+	del.AddRaw(&foo, &Foo::BarVoid);*/
 
 	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
 	del.AddSP(pFoo, &Foo::BarVoid);
+	del.AddSP(pFoo, &Foo::BarVoid);
+	del.AddSP(pFoo, &Foo::BarVoid);
 
 	del.Broadcast(20);
+
+	MulticastDelegate<float> led;
+	led = del;
+	led.Broadcast(10);
 
 	END_TEST();
 }
