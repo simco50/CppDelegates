@@ -5,7 +5,7 @@
 #include <vector>
 #include <tuple>
 
-#define TEST_LOGGING
+//#define TEST_LOGGING
 
 #define STR(x) #x
 #define STRINGIFY(x) STR(x)
@@ -15,7 +15,6 @@
 #else
 #define LOG(msg, ...)
 #endif
-
 
 #define DECLARE_DELEGATE(name, ...) \
 using name = SinglecastDelegate<void, __VA_ARGS__>
@@ -154,8 +153,9 @@ public:
 	SPDelegate(const std::shared_ptr<T>& pObject, DelegateFunction pFunction, Args2... args) :
 		m_pObject(pObject),
 		m_pFunction(pFunction),
-		m_Payload(args...)
-	{}
+		m_Payload(std::forward<Args2>(args)...)
+	{
+	}
 
 	virtual RetVal Execute(Args&&... args) override
 	{
@@ -185,11 +185,11 @@ class DelegateHandle
 {
 public:
 	constexpr DelegateHandle() noexcept
-		: m_Id(-1) 
+		: m_Id(-1)
 	{
 	}
 	explicit DelegateHandle(bool /*generateId*/) noexcept
-		: m_Id(GetNewID()) 
+		: m_Id(GetNewID())
 	{
 	}
 	~DelegateHandle() noexcept = default;
@@ -207,6 +207,11 @@ public:
 		m_Id = other.m_Id;
 		other.Reset();
 		return *this;
+	}
+
+	inline operator bool() const noexcept
+	{
+		return IsValid();
 	}
 
 	inline bool operator==(const DelegateHandle& other) const noexcept
@@ -228,7 +233,6 @@ public:
 	{
 		m_Id = -1;
 	}
-
 private:
 	int m_Id;
 	static int CURRENT_ID;
@@ -239,16 +243,45 @@ template<typename size_t MaxStackSize>
 class InlineAllocator
 {
 public:
+	//Constructor
 	constexpr InlineAllocator() noexcept
 		: m_Size(0)
 	{
 	}
 
+	//Destructor
 	~InlineAllocator() noexcept
 	{
 		Free();
 	}
 
+	//Copy constructor
+	InlineAllocator(const InlineAllocator& other)
+		: m_Size(0)
+	{
+		LOG("InlineAllocator Copy operator");
+
+		if (other.HasAllocation())
+		{
+			memcpy(Allocate(other.m_Size), other.GetAllocation(), other.m_Size);
+		}
+		m_Size = other.m_Size;
+	}
+
+	//Copy assignment operator
+	InlineAllocator& operator=(const InlineAllocator& other)
+	{
+		LOG("InlineAllocator Copy assignment operator");
+
+		if (other.HasAllocation())
+		{
+			memcpy(Allocate(other.m_Size), other.GetAllocation(), other.m_Size);
+		}
+		m_Size = other.m_Size;
+		return *this;
+	}
+
+	//Move constructor
 	InlineAllocator(InlineAllocator&& other) noexcept
 		: m_Size(other.m_Size)
 	{
@@ -265,6 +298,7 @@ public:
 		}
 	}
 
+	//Move assignment operator
 	InlineAllocator& operator=(InlineAllocator&& other) noexcept
 	{
 		LOG("InlineAllocator Move assignment operator");
@@ -283,30 +317,8 @@ public:
 		return *this;
 	}
 
-	InlineAllocator(const InlineAllocator& other)
-		: m_Size(0)
-	{
-		LOG("InlineAllocator Copy operator");
-
-		if (other.HasAllocation())
-		{
-			memcpy(Allocate(other.m_Size), other.GetAllocation(), other.m_Size);
-		}
-		m_Size = other.m_Size;
-	}
-
-	InlineAllocator& operator=(const InlineAllocator& other)
-	{
-		LOG("InlineAllocator Copy assignment operator");
-
-		if (other.HasAllocation())
-		{
-			memcpy(Allocate(other.m_Size), other.GetAllocation(), other.m_Size);
-		}
-		m_Size = other.m_Size;
-		return *this;
-	}
-
+	//Allocate memory of given size
+	//If the size is over the predefined threshold, it will be allocated on the heap
 	void* Allocate(const size_t size)
 	{
 		Free();
@@ -320,7 +332,8 @@ public:
 		LOG("Stack allocation: %d", (int)size);
 		return (void*)Buffer;
 	}
-
+	
+	//Free the allocated memory
 	void Free()
 	{
 		if (m_Size > MaxStackSize)
@@ -331,6 +344,7 @@ public:
 		m_Size = 0;
 	}
 
+	//Return the allocated memory either on the stack or on the heap
 	inline void* GetAllocation() const
 	{
 		return m_Size > MaxStackSize ? pPtr : (void*)Buffer;
@@ -342,6 +356,8 @@ public:
 	}
 
 private:
+	//If the allocation is smaller than the threshold, Buffer is used
+	//Otherwise pPtr is used together with a separate dynamic allocation
 	union
 	{
 		char Buffer[MaxStackSize];
@@ -356,13 +372,14 @@ class DelegateHandler
 public:
 	using IDelegateT = IDelegate<RetVal, Args...>;
 
+	//Copy constructor
 	DelegateHandler(const DelegateHandler& other)
-		: m_Allocator(other.m_Allocator),
-		m_Handle(true)
+		: m_Allocator(other.m_Allocator), m_Handle(true)
 	{
 		LOG("DelegateHandler copy constructor");
 	}
 
+	//Copy assignment operator
 	DelegateHandler& operator=(const DelegateHandler& other)
 	{
 		LOG("DelegateHandler copy assignment operator");
@@ -371,19 +388,19 @@ public:
 		return *this;
 	}
 
-
-	~DelegateHandler()
+	~DelegateHandler() noexcept
 	{
 		Release();
 	}
 
+	//Move constructor
 	DelegateHandler(DelegateHandler&& other) noexcept
-		: m_Allocator(std::move(other.m_Allocator)),
-		m_Handle(std::move(other.m_Handle))
+		: m_Allocator(std::move(other.m_Allocator)), m_Handle(std::move(other.m_Handle))
 	{
 		LOG("DelegateHandler move constructor");
 	}
 
+	//Move assignment operator
 	DelegateHandler& operator=(DelegateHandler&& other) noexcept
 	{
 		LOG("DelegateHandler move assignment operator");
@@ -394,6 +411,7 @@ public:
 		return *this;
 	}
 
+	//Create delegate using member function
 	template<typename T, typename... Args2>
 	static DelegateHandler CreateRaw(T* pObj, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
 	{
@@ -402,6 +420,7 @@ public:
 		return handler;
 	}
 
+	//Create delegate using global/static function
 	template<typename... Args2>
 	static DelegateHandler CreateStatic(RetVal(*pFunction)(Args..., Args2...), Args2... args)
 	{
@@ -410,6 +429,7 @@ public:
 		return handler;
 	}
 
+	//Create delegate using std::shared_ptr
 	template<typename T, typename... Args2>
 	static DelegateHandler CreateSP(const std::shared_ptr<T>& pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
 	{
@@ -418,6 +438,7 @@ public:
 		return handler;
 	}
 
+	//Create delegate using a lambda
 	template<typename TLambda, typename... Args2>
 	static DelegateHandler CreateLambda(TLambda&& lambda, Args2... args)
 	{
@@ -426,12 +447,16 @@ public:
 		return handler;
 	}
 
+	//Execute the delegate with the given parameters
 	RetVal Execute(Args&&... args) const
 	{
 		assert(m_Allocator.HasAllocation());
 		return GetDelegate()->Execute(std::forward<Args>(args)...);
 	}
 
+	//Gets the owner of the deletage
+	//Only valid for SPDelegate and RawDelegate.
+	//Otherwise returns nullptr by default
 	void* GetOwner()
 	{
 		if (m_Allocator.HasAllocation())
@@ -457,7 +482,7 @@ protected:
 	}
 
 	template<typename T, typename... Args>
-	void Bind(Args&&... args) noexcept
+	void Bind(Args&&... args)
 	{
 		Release();
 		void* pAlloc = m_Allocator.Allocate(sizeof(T));
@@ -480,6 +505,9 @@ protected:
 		return (IDelegateT*)(m_Allocator.GetAllocation());
 	}
 
+	//Allocator for the delegate itself.
+	//Delegate gets allocated inline when its is smaller or equal than 32 bytes in size.
+	//Can be changed by preference
 	InlineAllocator<32> m_Allocator;
 	DelegateHandle m_Handle;
 };
@@ -491,9 +519,13 @@ class SinglecastDelegate : public DelegateHandler<RetVal, Args...>
 public:
 	using DelegateHandlerT = DelegateHandler<RetVal, Args...>;
 
+	//Default constructor
 	SinglecastDelegate() = default;
+
+	//Default destructor
 	~SinglecastDelegate() = default;
 
+	//Copy contructor
 	SinglecastDelegate(const SinglecastDelegate& other)
 		: m_Allocator(other.m_Allocator),
 		m_Handle(true)
@@ -501,6 +533,7 @@ public:
 		LOG("SinglecastDelegate copy constructor");
 	}
 
+	//Copy assignment operator
 	SinglecastDelegate& operator=(const SinglecastDelegate& other)
 	{
 		LOG("SinglecastDelegate copy assignment operator");
@@ -510,12 +543,14 @@ public:
 		return *this;
 	}
 
+	//Move constructor
 	SinglecastDelegate(SinglecastDelegate&& other) noexcept
 		: DelegateHandler(std::move(other))
 	{
 		LOG("SinglecastDelegate move constructor");
 	}
 
+	//Move assignment operator
 	SinglecastDelegate& operator=(SinglecastDelegate&& other) noexcept
 	{
 		LOG("SinglecastDelegate move assignment operator");
@@ -553,6 +588,7 @@ public:
 		Bind<SPDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
 	}
 
+	//If the allocator has a size, it means it's bound to something
 	inline bool IsBound() const
 	{
 		return GetDelegate()->HasAllocation();
@@ -567,14 +603,17 @@ public:
 		return RetVal();
 	}
 
+	//Clear the bound delegate if it exists
 	inline void Clear()
 	{
 		Release();
 	}
 
+	//Clear the bound delegate if it is bound to the given object.
+	//Ignored when pObject is a nullptr
 	inline void ClearIfBoundTo(void* pObject)
 	{
-		if (IsBoundTo(pObject))
+		if (pObject != nullptr && IsBoundTo(pObject))
 		{
 			Release();
 		}
@@ -589,26 +628,37 @@ private:
 	using DelegateHandlerT = DelegateHandler<void, Args...>;
 
 public:
+	//Default constructor
 	constexpr MulticastDelegate() = default;
+
+	//Default destructor
 	~MulticastDelegate() noexcept = default;
+
+	//Default copy constructor
 	MulticastDelegate(const MulticastDelegate& other) = default;
+
+	//Defaul copy assignment operator
 	MulticastDelegate& operator=(const MulticastDelegate& other) = default;
 
+	//Move constructor
 	MulticastDelegate(MulticastDelegate&& other) noexcept
 		: m_Events(std::move(other.m_Events))
 	{}
 
+	//Move assignment operator
 	MulticastDelegate& operator=(MulticastDelegate&& other) noexcept
 	{
 		m_Events = std::move(other.m_Events);
 		return *this;
 	}
 
+	//Add delegate with the += operator
 	inline DelegateHandle operator+=(DelegateHandlerT&& handler)
 	{
 		return Add(std::forward<DelegateHandlerT>(handler));
 	}
 
+	//Remove a delegate using its DelegateHandle
 	inline bool operator-=(DelegateHandle& handle)
 	{
 		return Remove(handle);
