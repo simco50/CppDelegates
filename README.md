@@ -4,8 +4,8 @@ These are not standard in C++ but are a great way for communication and it's wid
 Unreal Engine is worth nothing as it has its own implementation of Delegates in C++ too.
 
 ## Classes ##
-- SinglecastDelegate<RetVal, Args>
-- MulticastDelegate<Args>
+- ```SinglecastDelegate<RetVal, Args>```
+- ```MulticastDelegate<Args>```
 
 ## Features ##
 - Support for:
