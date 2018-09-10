@@ -54,7 +54,9 @@ class StaticDelegate<RetVal (Args...), Args2...> : public IDelegate<RetVal, Args
 public:
 	using DelegateFunction = RetVal(*)(Args..., Args2...);
 
-	StaticDelegate(DelegateFunction function, Args2... args) : m_Function(function), m_Payload(args...) {}
+	StaticDelegate(DelegateFunction function, Args2&&... args) 
+		: m_Function(function), m_Payload(std::forward<Args2>(args)...)
+	{}
 	virtual ~StaticDelegate() {}
 	virtual RetVal Execute(Args&&... args) override
 	{
@@ -85,7 +87,9 @@ class RawDelegate<T, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args.
 public:
 	using DelegateFunction = RetVal(T::*)(Args..., Args2...);
 
-	RawDelegate(T* pObject, DelegateFunction function, Args2... args) : m_pObject(pObject), m_Function(function), m_Payload(args...) {}
+	RawDelegate(T* pObject, DelegateFunction function, Args2&&... args) 
+		: m_pObject(pObject), m_Function(function), m_Payload(std::forward<Args2>(args)...)
+	{}
 	virtual ~RawDelegate() {}
 	virtual RetVal Execute(Args&&... args) override
 	{
@@ -115,7 +119,7 @@ template<typename TLambda, typename RetVal, typename... Args, typename... Args2>
 class LambdaDelegate<TLambda, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args...>
 {
 public:
-	explicit LambdaDelegate(TLambda&& lambda, Args2... args) :
+	explicit LambdaDelegate(TLambda&& lambda, Args2&&... args) :
 		m_Lambda(std::forward<TLambda>(lambda)),
 		m_Payload(std::forward<Args2>(args)...)
 	{}
@@ -150,7 +154,7 @@ class SPDelegate<T, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args..
 public:
 	using DelegateFunction = RetVal(T::*)(Args..., Args2...);
 
-	SPDelegate(const std::shared_ptr<T>& pObject, DelegateFunction pFunction, Args2... args) :
+	SPDelegate(const std::shared_ptr<T>& pObject, DelegateFunction pFunction, Args2&&... args) :
 		m_pObject(pObject),
 		m_pFunction(pFunction),
 		m_Payload(std::forward<Args2>(args)...)
@@ -169,7 +173,7 @@ public:
 
 private:
 	template<std::size_t... Is>
-	RetVal Execute_Internal(Args... args, std::index_sequence<Is...>)
+	RetVal Execute_Internal(Args&&... args, std::index_sequence<Is...>)
 	{
 		return (m_pObject.get()->*m_pFunction)(std::forward<Args>(args)..., std::get<Is>(m_Payload)...);
 	}
@@ -188,10 +192,12 @@ public:
 		: m_Id(-1)
 	{
 	}
+
 	explicit DelegateHandle(bool /*generateId*/) noexcept
 		: m_Id(GetNewID())
 	{
 	}
+
 	~DelegateHandle() noexcept = default;
 	DelegateHandle(const DelegateHandle& other) = default;
 	DelegateHandle& operator=(const DelegateHandle& other) = default;
@@ -345,9 +351,16 @@ public:
 	}
 
 	//Return the allocated memory either on the stack or on the heap
-	inline void* GetAllocation() const
+	void* GetAllocation() const
 	{
-		return m_Size > MaxStackSize ? pPtr : (void*)Buffer;
+		if (HasAllocation())
+		{
+			return m_Size > MaxStackSize ? pPtr : (void*)Buffer;
+		}
+		else
+		{
+			return nullptr;
+		}
 	}
 
 	inline bool HasAllocation() const
@@ -477,7 +490,7 @@ public:
 	}
 
 protected:
-	DelegateHandler() noexcept
+	constexpr DelegateHandler() noexcept
 	{
 	}
 
@@ -527,8 +540,7 @@ public:
 
 	//Copy contructor
 	SinglecastDelegate(const SinglecastDelegate& other)
-		: m_Allocator(other.m_Allocator),
-		m_Handle(true)
+		: m_Allocator(other.m_Allocator), m_Handle(true)
 	{
 		LOG("SinglecastDelegate copy constructor");
 	}
