@@ -320,15 +320,18 @@ public:
 	//If the size is over the predefined threshold, it will be allocated on the heap
 	void* Allocate(const size_t size)
 	{
-		Free();
-		m_Size = size;
-		if (size > MaxStackSize)
+		if (m_Size != size)
 		{
-			LOG("Heap allocation: %d", (int)size);
-			pPtr = new char[size];
-			return pPtr;
+			Free();
+			m_Size = size;
+			if (size > MaxStackSize)
+			{
+				LOG("Heap allocation: %d", (int)size);
+				pPtr = new char[size];
+				return pPtr;
+			}
+			LOG("Stack allocation: %d", (int)size);
 		}
-		LOG("Stack allocation: %d", (int)size);
 		return (void*)Buffer;
 	}
 	
@@ -385,7 +388,7 @@ public:
 
 	//Copy constructor
 	DelegateHandler(const DelegateHandler& other)
-		: m_Allocator(other.m_Allocator), m_Handle(true)
+		: m_Allocator(other.m_Allocator)
 	{
 		LOG("DelegateHandler copy constructor");
 	}
@@ -395,7 +398,6 @@ public:
 	{
 		LOG("DelegateHandler copy assignment operator");
 		m_Allocator = other.m_Allocator;
-		m_Handle = DelegateHandle(true);
 		return *this;
 	}
 
@@ -406,7 +408,7 @@ public:
 
 	//Move constructor
 	DelegateHandler(DelegateHandler&& other) noexcept
-		: m_Allocator(std::move(other.m_Allocator)), m_Handle(std::move(other.m_Handle))
+		: m_Allocator(std::move(other.m_Allocator))
 	{
 		LOG("DelegateHandler move constructor");
 	}
@@ -418,7 +420,6 @@ public:
 
 		m_Allocator.Free();
 		m_Allocator = std::move(other.m_Allocator);
-		m_Handle = std::move(other.m_Handle);
 		return *this;
 	}
 
@@ -477,24 +478,22 @@ public:
 		return nullptr;
 	}
 
-	inline DelegateHandle& GetHandle() 
-	{
-		return m_Handle;
-	}
-
-	inline const DelegateHandle& GetHandle() const
-	{
-		return m_Handle; 
-	}
-
 	//Clear the bound delegate if it exists
 	inline void Clear()
 	{
 		Release();
 	}
 
+	//Determines the stack size the inline allocator can use
+	//This is a public function so it can easily be requested
+	constexpr static __int32 GetAllocatorStackSize()
+	{
+		return 32;
+	}
+
 protected:
 	constexpr DelegateHandler() noexcept
+		: m_Allocator()
 	{
 	}
 
@@ -504,12 +503,10 @@ protected:
 		Release();
 		void* pAlloc = m_Allocator.Allocate(sizeof(T));
 		new (pAlloc) T(std::forward<Args>(args)...);
-		m_Handle = DelegateHandle(true);
 	}
 
 	void Release()
 	{
-		m_Handle.Reset();
 		if (m_Allocator.HasAllocation())
 		{
 			GetDelegate()->~IDelegate();
@@ -522,21 +519,10 @@ protected:
 		return (IDelegateT*)(m_Allocator.GetAllocation());
 	}
 
-	constexpr static __int32 GetDesiredSize()
-	{
-		return 64;
-	}
-
-	constexpr static __int32 GetAllocatorSize()
-	{
-		return GetDesiredSize() - sizeof(size_t) - sizeof(DelegateHandle);
-	}
-
 	//Allocator for the delegate itself.
 	//Delegate gets allocated inline when its is smaller or equal than 64 bytes in size.
 	//Can be changed by preference
-	DelegateHandle m_Handle;
-	InlineAllocator<DelegateHandler::GetAllocatorSize()> m_Allocator;
+	InlineAllocator<DelegateHandler::GetAllocatorStackSize()> m_Allocator;
 };
 
 //Delegate that can be bound to by just ONE object
@@ -617,14 +603,14 @@ public:
 	//If the allocator has a size, it means it's bound to something
 	inline bool IsBound() const
 	{
-		return GetDelegate()->HasAllocation();
+		return m_Allocator.HasAllocation();
 	}
 
 	RetVal ExecuteIfBound(Args&&... args) const
 	{
 		if (IsBound())
 		{
-			return m_pDelegate->Execute(std::forward<Args>(args)...);
+			return GetDelegate()->Execute(std::forward<Args>(args)...);
 		}
 		return RetVal();
 	}
@@ -646,6 +632,7 @@ class MulticastDelegate
 {
 private:
 	using DelegateHandlerT = DelegateHandler<void, Args...>;
+	using DelegateHandlerPair = std::pair<DelegateHandle, DelegateHandlerT>;
 
 public:
 	//Default constructor
@@ -694,14 +681,14 @@ public:
 		//Favour an empty space over a possible array reallocation
 		for (size_t i = 0; i < m_Events.size(); ++i)
 		{
-			if (m_Events[i].GetHandle().IsValid() == false)
+			if (m_Events[i].first.IsValid() == false)
 			{
-				m_Events[i] = std::move(handler);
-				return m_Events[i].GetHandle();
+				m_Events[i] = std::make_pair(DelegateHandle(true), std::move(handler));
+				return m_Events[i].first;
 			}
 		}
-		m_Events.push_back(std::move(handler));
-		return m_Events.back().GetHandle();
+		m_Events.push_back(std::make_pair(DelegateHandle(true), std::move(handler)));
+		return m_Events.back().first;
 	}
 
 	//Bind a member function
@@ -741,7 +728,7 @@ public:
 		{
 			for (size_t i = 0; i < m_Events.size(); ++i)
 			{
-				if (m_Events[i].GetOwner() == pObject)
+				if (m_Events[i].second.GetOwner() == pObject)
 				{
 					if (IsLocked())
 					{
@@ -764,11 +751,11 @@ public:
 		{
 			for (size_t i = 0; i < m_Events.size(); ++i)
 			{
-				if (m_Events[i].GetHandle() == handle)
+				if (m_Events[i].first == handle)
 				{
 					if (IsLocked())
 					{
-						m_Events[i].Clear();
+						m_Events[i].second.Clear();
 					}
 					else
 					{
@@ -787,9 +774,9 @@ public:
 	{
 		if (IsLocked())
 		{
-			for (DelegateHandlerT& handler : m_Events)
+			for (DelegateHandlerPair& handler : m_Events)
 			{
-				handler.Clear();
+				handler.second.Clear();
 			}
 		}
 		else
@@ -805,7 +792,7 @@ public:
 			size_t toDelete = 0;
 			for (size_t i = 0; i < m_Events.size() - toDelete; ++i)
 			{
-				if (m_Events[i].GetHandle().IsValid() == false)
+				if (m_Events[i].first.IsValid() == false)
 				{
 					std::swap(m_Events[i], m_Events[toDelete]);
 					++toDelete;
@@ -824,9 +811,9 @@ public:
 		Lock();
 		for (size_t i = 0; i < m_Events.size(); ++i)
 		{
-			if (m_Events[i].GetHandle().IsValid())
+			if (m_Events[i].first.IsValid())
 			{
-				m_Events[i].Execute(std::forward<Args>(args)...);
+				m_Events[i].second.Execute(std::forward<Args>(args)...);
 			}
 		}
 		Unlock();
@@ -852,7 +839,7 @@ private:
 		return m_Locks > 0;
 	}
 
-	std::vector<DelegateHandlerT> m_Events;
+	std::vector<DelegateHandlerPair> m_Events;
 	unsigned int m_Locks;
 };
 
