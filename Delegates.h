@@ -1,16 +1,16 @@
-#pragma once
+#ifndef CPP_DELEGATES
+#define CPP_DELEGATES
 
 #include <assert.h>
 #include <memory>
 #include <vector>
 #include <tuple>
 
-//#define TEST_LOGGING
+#define CPP_DELEGATES_TEST_LOGGING
 
+#ifdef CPP_DELEGATES_TEST_LOGGING
 #define STR(x) #x
 #define STRINGIFY(x) STR(x)
-
-#ifdef TEST_LOGGING
 #define LOG(msg, ...) printf("[" __FUNCTION__ ": " STRINGIFY(__LINE__) "] > " msg##"\n", __VA_ARGS__)
 #else
 #define LOG(msg, ...)
@@ -40,10 +40,15 @@ template<typename RetVal, typename ...Args>
 class IDelegate
 {
 public:
-	virtual ~IDelegate() {}
+	IDelegate() = default;
+	virtual ~IDelegate() noexcept = default;
 	virtual RetVal Execute(Args&&... args) = 0;
-	virtual void* GetOwner() = 0;
+	virtual void* GetOwner() const
+	{
+		return nullptr;
+	}
 };
+
 
 template<typename RetVal, typename... Args2>
 class StaticDelegate;
@@ -57,16 +62,10 @@ public:
 	StaticDelegate(DelegateFunction function, Args2&&... args) 
 		: m_Function(function), m_Payload(std::forward<Args2>(args)...)
 	{}
-	virtual ~StaticDelegate() {}
 	virtual RetVal Execute(Args&&... args) override
 	{
 		return Execute_Internal(std::forward<Args>(args)..., std::index_sequence_for<Args2...>());
 	}
-	virtual void* GetOwner() override
-	{
-		return nullptr;
-	}
-
 private:
 	template<std::size_t... Is>
 	RetVal Execute_Internal(Args&&... args, std::index_sequence<Is...>)
@@ -90,14 +89,13 @@ public:
 	RawDelegate(T* pObject, DelegateFunction function, Args2&&... args) 
 		: m_pObject(pObject), m_Function(function), m_Payload(std::forward<Args2>(args)...)
 	{}
-	virtual ~RawDelegate() {}
 	virtual RetVal Execute(Args&&... args) override
 	{
 		return Execute_Internal(std::forward<Args>(args)..., std::index_sequence_for<Args2...>());
 	}
-	virtual void* GetOwner() override
+	virtual void* GetOwner() const override
 	{
-		return nullptr;
+		return m_pObject;
 	}
 
 private:
@@ -128,12 +126,6 @@ public:
 	{
 		return Execute_Internal(std::forward<Args>(args)..., std::index_sequence_for<Args2...>());
 	}
-
-	virtual void* GetOwner() override
-	{
-		return nullptr;
-	}
-
 private:
 	template<std::size_t... Is>
 	RetVal Execute_Internal(Args&&... args, std::index_sequence<Is...>)
@@ -166,7 +158,7 @@ public:
 		return Execute_Internal(std::forward<Args>(args)..., std::index_sequence_for<Args2...>());
 	}
 
-	virtual void* GetOwner() override
+	virtual void* GetOwner() const override
 	{
 		return m_pObject.get();
 	}
@@ -240,9 +232,9 @@ public:
 		m_Id = -1;
 	}
 private:
-	int m_Id;
-	static int CURRENT_ID;
-	static int GetNewID();
+	__int64 m_Id;
+	static __int64 CURRENT_ID;
+	static __int64 GetNewID();
 };
 
 template<typename size_t MaxStackSize>
@@ -253,6 +245,7 @@ public:
 	constexpr InlineAllocator() noexcept
 		: m_Size(0)
 	{
+		static_assert(MaxStackSize > sizeof(void*), "MaxStackSize is smaller or equal to the size of a pointer. This will make the use of an InlineAllocator pointless. Please increase the MaxStackSize.");
 	}
 
 	//Destructor
@@ -355,7 +348,7 @@ public:
 	{
 		if (HasAllocation())
 		{
-			return m_Size > MaxStackSize ? pPtr : (void*)Buffer;
+			return HasHeapAllocation() ? pPtr : (void*)Buffer;
 		}
 		else
 		{
@@ -366,6 +359,11 @@ public:
 	inline bool HasAllocation() const
 	{
 		return m_Size > 0;
+	}
+
+	inline bool HasHeapAllocation() const
+	{
+		return m_Size > MaxStackSize;
 	}
 
 private:
@@ -420,7 +418,7 @@ public:
 
 		m_Allocator.Free();
 		m_Allocator = std::move(other.m_Allocator);
-		m_Handle = std::move(m_Handle);
+		m_Handle = std::move(other.m_Handle);
 		return *this;
 	}
 
@@ -470,7 +468,7 @@ public:
 	//Gets the owner of the deletage
 	//Only valid for SPDelegate and RawDelegate.
 	//Otherwise returns nullptr by default
-	void* GetOwner()
+	void* GetOwner() const
 	{
 		if (m_Allocator.HasAllocation())
 		{
@@ -487,6 +485,12 @@ public:
 	inline const DelegateHandle& GetHandle() const
 	{
 		return m_Handle; 
+	}
+
+	//Clear the bound delegate if it exists
+	inline void Clear()
+	{
+		Release();
 	}
 
 protected:
@@ -518,11 +522,21 @@ protected:
 		return (IDelegateT*)(m_Allocator.GetAllocation());
 	}
 
+	constexpr static __int32 GetDesiredSize()
+	{
+		return 64;
+	}
+
+	constexpr static __int32 GetAllocatorSize()
+	{
+		return GetDesiredSize() - sizeof(size_t) - sizeof(DelegateHandle);
+	}
+
 	//Allocator for the delegate itself.
-	//Delegate gets allocated inline when its is smaller or equal than 32 bytes in size.
+	//Delegate gets allocated inline when its is smaller or equal than 64 bytes in size.
 	//Can be changed by preference
-	InlineAllocator<32> m_Allocator;
 	DelegateHandle m_Handle;
+	InlineAllocator<DelegateHandler::GetAllocatorSize()> m_Allocator;
 };
 
 //Delegate that can be bound to by just ONE object
@@ -557,7 +571,7 @@ public:
 
 	//Move constructor
 	SinglecastDelegate(SinglecastDelegate&& other) noexcept
-		: DelegateHandler(std::move(other))
+		: DelegateHandlerT(std::move(other))
 	{
 		LOG("SinglecastDelegate move constructor");
 	}
@@ -615,12 +629,6 @@ public:
 		return RetVal();
 	}
 
-	//Clear the bound delegate if it exists
-	inline void Clear()
-	{
-		Release();
-	}
-
 	//Clear the bound delegate if it is bound to the given object.
 	//Ignored when pObject is a nullptr
 	inline void ClearIfBoundTo(void* pObject)
@@ -641,7 +649,10 @@ private:
 
 public:
 	//Default constructor
-	constexpr MulticastDelegate() = default;
+	constexpr MulticastDelegate()
+		: m_Locks(0)
+	{
+	}
 
 	//Default destructor
 	~MulticastDelegate() noexcept = default;
@@ -654,8 +665,10 @@ public:
 
 	//Move constructor
 	MulticastDelegate(MulticastDelegate&& other) noexcept
-		: m_Events(std::move(other.m_Events))
-	{}
+		: m_Events(std::move(other.m_Events)),
+		m_Locks(std::move(other.m_Locks))
+	{
+	}
 
 	//Move assignment operator
 	MulticastDelegate& operator=(MulticastDelegate&& other) noexcept
@@ -665,7 +678,7 @@ public:
 	}
 
 	//Add delegate with the += operator
-	inline DelegateHandle operator+=(DelegateHandlerT&& handler)
+	inline DelegateHandle operator+=(DelegateHandlerT&& handler) noexcept
 	{
 		return Add(std::forward<DelegateHandlerT>(handler));
 	}
@@ -676,9 +689,18 @@ public:
 		return Remove(handle);
 	}
 
-	inline DelegateHandle Add(DelegateHandlerT&& handler)
+	inline DelegateHandle Add(DelegateHandlerT&& handler) noexcept
 	{
-		m_Events.push_back(std::forward<DelegateHandlerT>(handler));
+		//Favour an empty space over a possible array reallocation
+		for (size_t i = 0; i < m_Events.size(); ++i)
+		{
+			if (m_Events[i].GetHandle().IsValid() == false)
+			{
+				m_Events[i] = std::move(handler);
+				return m_Events[i].GetHandle();
+			}
+		}
+		m_Events.push_back(std::move(handler));
 		return m_Events.back().GetHandle();
 	}
 
@@ -686,32 +708,28 @@ public:
 	template<typename T, typename... Args2>
 	inline DelegateHandle AddRaw(T* pObject, void(T::*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		m_Events.push_back(DelegateHandlerT::CreateRaw(pObject, pFunction, std::forward<Args2>(args)...));
-		return m_Events.back().GetHandle();
+		return Add(DelegateHandlerT::CreateRaw(pObject, pFunction, std::forward<Args2>(args)...));
 	}
 
 	//Bind a static/global function
 	template<typename... Args2>
 	inline DelegateHandle AddStatic(void(*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		m_Events.push_back(DelegateHandlerT::CreateStatic(pFunction, std::forward<Args2>(args)...));
-		return m_Events.back().GetHandle();
+		return Add(DelegateHandlerT::CreateStatic(pFunction, std::forward<Args2>(args)...));
 	}
 
 	//Bind a lambda
 	template<typename LambdaType, typename... Args2>
 	inline DelegateHandle AddLambda(LambdaType&& lambda, Args2&&... args)
 	{
-		m_Events.push_back(DelegateHandlerT::CreateLambda(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...));
-		return m_Events.back().GetHandle();
+		return Add(DelegateHandlerT::CreateLambda(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...));
 	}
 
 	//Bind a member function with a shared_ptr object
 	template<typename T, typename... Args2>
 	inline DelegateHandle AddSP(std::shared_ptr<T> pObject, void(T::*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		m_Events.push_back(DelegateHandlerT::CreateSP(pObject, pFunction, std::forward<Args2>(args)...));
-		return m_Events.back().GetHandle();
+		return Add(DelegateHandlerT::CreateSP(pObject, pFunction, std::forward<Args2>(args)...));
 	}
 
 	//Removes all handles that are bound from a specific object
@@ -723,10 +741,17 @@ public:
 		{
 			for (size_t i = 0; i < m_Events.size(); ++i)
 			{
-				if (m_Events[i]->GetOwner() == pObject)
+				if (m_Events[i].GetOwner() == pObject)
 				{
-					std::swap(m_Events[i], m_Events[m_Events.size() - 1]);
-					m_Events.pop_back();
+					if (IsLocked())
+					{
+						m_Events[i].Clear();
+					}
+					else
+					{
+						std::swap(m_Events[i], m_Events[m_Events.size() - 1]);
+						m_Events.pop_back();
+					}
 				}
 			}
 		}
@@ -735,13 +760,23 @@ public:
 	//Remove a function from the event list by the handle
 	bool Remove(DelegateHandle& handle)
 	{
-		for (auto& del : m_Events)
+		if (handle.IsValid())
 		{
-			if (del.GetHandle() == handle)
+			for (size_t i = 0; i < m_Events.size(); ++i)
 			{
-				std::swap(e, m_Events[m_Events.size() - 1]);
-				m_Events.pop_back();
-				return true;
+				if (m_Events[i].GetHandle() == handle)
+				{
+					if (IsLocked())
+					{
+						m_Events[i].Clear();
+					}
+					else
+					{
+						std::swap(m_Events[i], m_Events[m_Events.size() - 1]);
+						m_Events.pop_back();
+					}
+					return true;
+				}
 			}
 		}
 		return false;
@@ -750,18 +785,75 @@ public:
 	//Remove all the functions bound to the delegate
 	inline void RemoveAll()
 	{
-		m_Events.clear();
-	}
-
-	//Execute all functions that are bound
-	inline void Broadcast(Args&& ...args) const
-	{
-		for (size_t i = 0; i < m_Events.size(); ++i)
+		if (IsLocked())
 		{
-			m_Events[i].Execute(std::forward<Args>(args)...);
+			for (DelegateHandlerT& handler : m_Events)
+			{
+				handler.Clear();
+			}
+		}
+		else
+		{
+			m_Events.clear();
 		}
 	}
 
+	void Compress(const size_t maxSpace = 0)
+	{
+		if (IsLocked() == false)
+		{
+			size_t toDelete = 0;
+			for (size_t i = 0; i < m_Events.size() - toDelete; ++i)
+			{
+				if (m_Events[i].GetHandle().IsValid() == false)
+				{
+					std::swap(m_Events[i], m_Events[toDelete]);
+					++toDelete;
+				}
+			}
+			if (toDelete > maxSpace)
+			{
+				m_Events.resize(m_Events.size() - toDelete);
+			}
+		}
+	}
+
+	//Execute all functions that are bound
+	inline void Broadcast(Args&& ...args)
+	{
+		Lock();
+		for (size_t i = 0; i < m_Events.size(); ++i)
+		{
+			if (m_Events[i].GetHandle().IsValid())
+			{
+				m_Events[i].Execute(std::forward<Args>(args)...);
+			}
+		}
+		Unlock();
+	}
+
 private:
+	inline void Lock()
+	{
+		++m_Locks;
+	}
+
+	inline void Unlock()
+	{
+		//Unlock() should never be called more than Lock()!
+		assert(m_Locks > 0);
+		--m_Locks;
+	}
+
+	//Returns true is the delegate is currently broadcasting
+	//If this is true, the order of the array should not be changed otherwise this causes undefined behaviour
+	inline bool IsLocked() const
+	{
+		return m_Locks > 0;
+	}
+
 	std::vector<DelegateHandlerT> m_Events;
+	unsigned int m_Locks;
 };
+
+#endif
