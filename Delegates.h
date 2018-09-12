@@ -540,7 +540,7 @@ public:
 
 	//Copy contructor
 	SinglecastDelegate(const SinglecastDelegate& other)
-		: m_Allocator(other.m_Allocator), m_Handle(true)
+		: m_Allocator(other.m_Allocator)
 	{
 		LOG("SinglecastDelegate copy constructor");
 	}
@@ -551,7 +551,6 @@ public:
 		LOG("SinglecastDelegate copy assignment operator");
 
 		m_Allocator = other.m_Allocator;
-		m_Handle = DelegateHandle(true);
 		return *this;
 	}
 
@@ -568,7 +567,6 @@ public:
 		LOG("SinglecastDelegate move assignment operator");
 
 		m_Allocator = std::move(other.m_Allocator);
-		m_Handle = std::move(other.m_Handle);
 		return *this;
 	}
 
