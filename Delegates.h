@@ -23,7 +23,8 @@ using name = SinglecastDelegate<void, __VA_ARGS__>
 using name = SinglecastDelegate<retValue, __VA_ARGS__>
 
 #define DECLARE_MULTICAST_DELEGATE(name, ...) \
-using name = MulticastDelegate<__VA_ARGS__>
+using name = MulticastDelegate<__VA_ARGS__>; \
+using name ## Delegate = MulticastDelegate<__VA_ARGS__>::DelegateHandlerT
 
 #define DECLARE_EVENT(name, ownerType, ...) \
 class name : public MulticastDelegate<__VA_ARGS__> \
@@ -36,7 +37,7 @@ private: \
 };
 
 //Base type for delegates
-template<typename RetVal, typename ...Args>
+template<typename RetVal, typename... Args>
 class IDelegate
 {
 public:
@@ -140,7 +141,7 @@ private:
 template<typename T, typename RetVal, typename... Args>
 class SPDelegate;
 
-template<typename RetVal, typename T, typename ...Args, typename... Args2>
+template<typename RetVal, typename T, typename... Args, typename... Args2>
 class SPDelegate<T, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args...>
 {
 public:
@@ -380,7 +381,7 @@ private:
 	size_t m_Size;
 };
 
-template<typename RetVal, typename ...Args>
+template<typename RetVal, typename... Args>
 class DelegateHandler
 {
 public:
@@ -428,7 +429,7 @@ public:
 	static DelegateHandler CreateRaw(T* pObj, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
 	{
 		DelegateHandler handler;
-		handler.Bind<RawDelegate<T, RetVal(Args...), Args2...>>(pObj, pFunction, args...);
+		handler.Bind<RawDelegate<T, RetVal(Args...), Args2...>>(pObj, pFunction, std::forward<Args2>(args)...);
 		return handler;
 	}
 
@@ -437,7 +438,7 @@ public:
 	static DelegateHandler CreateStatic(RetVal(*pFunction)(Args..., Args2...), Args2... args)
 	{
 		DelegateHandler handler;
-		handler.Bind<StaticDelegate<RetVal(Args...), Args2...>>(pFunction, args...);
+		handler.Bind<StaticDelegate<RetVal(Args...), Args2...>>(pFunction, std::forward<Args2>(args)...);
 		return handler;
 	}
 
@@ -446,7 +447,7 @@ public:
 	static DelegateHandler CreateSP(const std::shared_ptr<T>& pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
 	{
 		DelegateHandler handler;
-		handler.Bind<SPDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, args...);
+		handler.Bind<SPDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
 		return handler;
 	}
 
@@ -455,7 +456,7 @@ public:
 	static DelegateHandler CreateLambda(TLambda&& lambda, Args2... args)
 	{
 		DelegateHandler handler;
-		handler.Bind<LambdaDelegate<TLambda, RetVal(Args...), Args2...>>(std::forward<TLambda>(lambda), args...);
+		handler.Bind<LambdaDelegate<TLambda, RetVal(Args...), Args2...>>(std::forward<TLambda>(lambda), std::forward<Args2>(args)...);
 		return handler;
 	}
 
@@ -526,7 +527,7 @@ protected:
 };
 
 //Delegate that can be bound to by just ONE object
-template<typename RetVal, typename ...Args>
+template<typename RetVal, typename... Args>
 class SinglecastDelegate : public DelegateHandler<RetVal, Args...>
 {
 public:
@@ -625,11 +626,13 @@ public:
 };
 
 //Delegate that can be bound to by MULTIPLE objects
-template<typename ...Args>
+template<typename... Args>
 class MulticastDelegate
 {
-private:
+public:
 	using DelegateHandlerT = DelegateHandler<void, Args...>;
+
+private:
 	using DelegateHandlerPair = std::pair<DelegateHandle, DelegateHandlerT>;
 
 public:
