@@ -6,7 +6,7 @@
 #include <vector>
 #include <tuple>
 
-#define CPP_DELEGATES_TEST_LOGGING
+//#define CPP_DELEGATES_TEST_LOGGING
 
 #ifdef CPP_DELEGATES_TEST_LOGGING
 #define STR(x) #x
@@ -463,7 +463,7 @@ public:
 	//Execute the delegate with the given parameters
 	RetVal Execute(Args&&... args) const
 	{
-		assert(m_Allocator.HasAllocation());
+		assert(m_Allocator.HasAllocation() && "Delegate is not bound");
 		return GetDelegate()->Execute(std::forward<Args>(args)...);
 	}
 
@@ -495,6 +495,11 @@ public:
 protected:
 	constexpr DelegateHandler() noexcept
 		: m_Allocator()
+	{
+	}
+
+	explicit constexpr DelegateHandler(const InlineAllocator<DelegateHandler::GetAllocatorStackSize()>& allocator) noexcept
+		: m_Allocator(allocator)
 	{
 	}
 
@@ -541,7 +546,7 @@ public:
 
 	//Copy contructor
 	SinglecastDelegate(const SinglecastDelegate& other)
-		: m_Allocator(other.m_Allocator)
+		: DelegateHandlerT(other.m_Allocator)
 	{
 		LOG("SinglecastDelegate copy constructor");
 	}
@@ -763,6 +768,7 @@ public:
 						std::swap(m_Events[i], m_Events[m_Events.size() - 1]);
 						m_Events.pop_back();
 					}
+					handle.Reset();
 					return true;
 				}
 			}
