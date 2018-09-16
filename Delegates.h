@@ -6,15 +6,18 @@
 #include <vector>
 #include <tuple>
 
+//This enables the typedef of Delegate = SinglecastDelegate as the name "SinglecastDelegate" is deprecated
+#define CPP_DELEGATES_USE_OLD_NAMING 0
+
 #define DECLARE_DELEGATE(name, ...) \
-using name = SinglecastDelegate<void, __VA_ARGS__>
+using name = Delegate<void, __VA_ARGS__>
 
 #define DECLARE_DELEGATE_RET(name, retValue, ...) \
-using name = SinglecastDelegate<retValue, __VA_ARGS__>
+using name = Delegate<retValue, __VA_ARGS__>
 
 #define DECLARE_MULTICAST_DELEGATE(name, ...) \
 using name = MulticastDelegate<__VA_ARGS__>; \
-using name ## Delegate = MulticastDelegate<__VA_ARGS__>::DelegateHandlerT
+using name ## Delegate = MulticastDelegate<__VA_ARGS__>::DelegateT
 
 #define DECLARE_EVENT(name, ownerType, ...) \
 class name : public MulticastDelegate<__VA_ARGS__> \
@@ -44,12 +47,12 @@ template<typename RetVal, typename... Args2>
 class StaticDelegate;
 
 template<typename RetVal, typename... Args, typename... Args2>
-class StaticDelegate<RetVal (Args...), Args2...> : public IDelegate<RetVal, Args...>
+class StaticDelegate<RetVal(Args...), Args2...> : public IDelegate<RetVal, Args...>
 {
 public:
 	using DelegateFunction = RetVal(*)(Args..., Args2...);
 
-	StaticDelegate(DelegateFunction function, Args2&&... args) 
+	StaticDelegate(DelegateFunction function, Args2&&... args)
 		: m_Function(function), m_Payload(std::forward<Args2>(args)...)
 	{}
 	virtual RetVal Execute(Args&&... args) override
@@ -76,7 +79,7 @@ class RawDelegate<T, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args.
 public:
 	using DelegateFunction = RetVal(T::*)(Args..., Args2...);
 
-	RawDelegate(T* pObject, DelegateFunction function, Args2&&... args) 
+	RawDelegate(T* pObject, DelegateFunction function, Args2&&... args)
 		: m_pObject(pObject), m_Function(function), m_Payload(std::forward<Args2>(args)...)
 	{}
 	virtual RetVal Execute(Args&&... args) override
@@ -315,7 +318,7 @@ public:
 		}
 		return (void*)Buffer;
 	}
-	
+
 	//Free the allocated memory
 	void Free()
 	{
@@ -360,85 +363,137 @@ private:
 	size_t m_Size;
 };
 
+//Delegate that can be bound to by just ONE object
 template<typename RetVal, typename... Args>
-class DelegateHandler
+class Delegate
 {
 public:
 	using IDelegateT = IDelegate<RetVal, Args...>;
 
-	//Copy constructor
-	DelegateHandler(const DelegateHandler& other)
+	//Default constructor
+	constexpr Delegate() noexcept
+		: m_Allocator()
+	{
+	}
+
+	//Default destructor
+	~Delegate() noexcept
+	{
+		Release();
+	}
+
+	//Copy contructor
+	Delegate(const Delegate& other)
 		: m_Allocator(other.m_Allocator)
 	{
 	}
 
 	//Copy assignment operator
-	DelegateHandler& operator=(const DelegateHandler& other)
+	Delegate& operator=(const Delegate& other)
 	{
+		Release();
 		m_Allocator = other.m_Allocator;
 		return *this;
 	}
 
-	~DelegateHandler() noexcept
-	{
-		Release();
-	}
-
 	//Move constructor
-	DelegateHandler(DelegateHandler&& other) noexcept
+	Delegate(Delegate&& other) noexcept
 		: m_Allocator(std::move(other.m_Allocator))
 	{
 	}
 
 	//Move assignment operator
-	DelegateHandler& operator=(DelegateHandler&& other) noexcept
+	Delegate& operator=(Delegate&& other) noexcept
 	{
-		m_Allocator.Free();
+		Release();
 		m_Allocator = std::move(other.m_Allocator);
 		return *this;
 	}
 
 	//Create delegate using member function
 	template<typename T, typename... Args2>
-	static DelegateHandler CreateRaw(T* pObj, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
+	static Delegate CreateRaw(T* pObj, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
 	{
-		DelegateHandler handler;
+		Delegate handler;
 		handler.Bind<RawDelegate<T, RetVal(Args...), Args2...>>(pObj, pFunction, std::forward<Args2>(args)...);
 		return handler;
 	}
 
 	//Create delegate using global/static function
 	template<typename... Args2>
-	static DelegateHandler CreateStatic(RetVal(*pFunction)(Args..., Args2...), Args2... args)
+	static Delegate CreateStatic(RetVal(*pFunction)(Args..., Args2...), Args2... args)
 	{
-		DelegateHandler handler;
+		Delegate handler;
 		handler.Bind<StaticDelegate<RetVal(Args...), Args2...>>(pFunction, std::forward<Args2>(args)...);
 		return handler;
 	}
 
 	//Create delegate using std::shared_ptr
 	template<typename T, typename... Args2>
-	static DelegateHandler CreateSP(const std::shared_ptr<T>& pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
+	static Delegate CreateSP(const std::shared_ptr<T>& pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2... args)
 	{
-		DelegateHandler handler;
+		Delegate handler;
 		handler.Bind<SPDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
 		return handler;
 	}
 
 	//Create delegate using a lambda
 	template<typename TLambda, typename... Args2>
-	static DelegateHandler CreateLambda(TLambda&& lambda, Args2... args)
+	static Delegate CreateLambda(TLambda&& lambda, Args2... args)
 	{
-		DelegateHandler handler;
+		Delegate handler;
 		handler.Bind<LambdaDelegate<TLambda, RetVal(Args...), Args2...>>(std::forward<TLambda>(lambda), std::forward<Args2>(args)...);
 		return handler;
 	}
 
+	//Bind a member function
+	template<typename T, typename... Args2>
+	inline void BindRaw(T* pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2&&... args)
+	{
+		*this = CreateRaw<T, Args2... >(pObject, pFunction, std::forward<Args2>(args)...);
+	}
+
+	//Bind a static/global function
+	template<typename... Args2>
+	inline void BindStatic(RetVal(*pFunction)(Args..., Args2...), Args2&&... args)
+	{
+		*this = CreateStatic<Args2... >(pFunction, std::forward<Args2>(args)...);
+	}
+
+	//Bind a lambda
+	template<typename LambdaType, typename... Args2>
+	inline void BindLambda(LambdaType&& lambda, Args2&&... args)
+	{
+		*this = CreateLambda<LambdaType, Args2... >(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...);
+	}
+
+	//Bind a member function with a shared_ptr object
+	template<typename T, typename... Args2>
+	inline void BindSP(std::shared_ptr<T> pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2&&... args)
+	{
+		*this = CreateSP<T, Args2... >(pObject, pFunction, std::forward<Args2>(args)...);
+	}
+
+	//If the allocator has a size, it means it's bound to something
+	inline bool IsBound() const
+	{
+		return m_Allocator.HasAllocation();
+	}
+
 	//Execute the delegate with the given parameters
-	RetVal Execute(Args&&... args) const
+	RetVal Execute(Args... args) const
 	{
 		assert(m_Allocator.HasAllocation() && "Delegate is not bound");
 		return GetDelegate()->Execute(std::forward<Args>(args)...);
+	}
+
+	RetVal ExecuteIfBound(Args... args) const
+	{
+		if (IsBound())
+		{
+			return GetDelegate()->Execute(std::forward<Args>(args)...);
+		}
+		return RetVal();
 	}
 
 	//Gets the owner of the deletage
@@ -451,6 +506,16 @@ public:
 			return m_Allocator->GetAllocation()->GetOwner();
 		}
 		return nullptr;
+	}
+
+	//Clear the bound delegate if it is bound to the given object.
+	//Ignored when pObject is a nullptr
+	inline void ClearIfBoundTo(void* pObject)
+	{
+		if (pObject != nullptr && IsBoundTo(pObject))
+		{
+			Release();
+		}
 	}
 
 	//Clear the bound delegate if it exists
@@ -466,17 +531,7 @@ public:
 		return 32;
 	}
 
-protected:
-	constexpr DelegateHandler() noexcept
-		: m_Allocator()
-	{
-	}
-
-	explicit constexpr DelegateHandler(const InlineAllocator<DelegateHandler::GetAllocatorStackSize()>& allocator) noexcept
-		: m_Allocator(allocator)
-	{
-	}
-
+private:
 	template<typename T, typename... Args>
 	void Bind(Args&&... args)
 	{
@@ -502,111 +557,23 @@ protected:
 	//Allocator for the delegate itself.
 	//Delegate gets allocated inline when its is smaller or equal than 64 bytes in size.
 	//Can be changed by preference
-	InlineAllocator<DelegateHandler::GetAllocatorStackSize()> m_Allocator;
+	InlineAllocator<Delegate::GetAllocatorStackSize()> m_Allocator;
 };
 
-//Delegate that can be bound to by just ONE object
+#if CPP_DELEGATES_USE_OLD_NAMING
 template<typename RetVal, typename... Args>
-class SinglecastDelegate : public DelegateHandler<RetVal, Args...>
-{
-public:
-	using DelegateHandlerT = DelegateHandler<RetVal, Args...>;
-
-	//Default constructor
-	SinglecastDelegate() = default;
-
-	//Default destructor
-	~SinglecastDelegate() = default;
-
-	//Copy contructor
-	SinglecastDelegate(const SinglecastDelegate& other)
-		: DelegateHandlerT(other.m_Allocator)
-	{
-	}
-
-	//Copy assignment operator
-	SinglecastDelegate& operator=(const SinglecastDelegate& other)
-	{
-		m_Allocator = other.m_Allocator;
-		return *this;
-	}
-
-	//Move constructor
-	SinglecastDelegate(SinglecastDelegate&& other) noexcept
-		: DelegateHandlerT(std::move(other))
-	{
-	}
-
-	//Move assignment operator
-	SinglecastDelegate& operator=(SinglecastDelegate&& other) noexcept
-	{
-		m_Allocator = std::move(other.m_Allocator);
-		return *this;
-	}
-
-	//Bind a member function
-	template<typename T, typename... Args2>
-	inline void BindRaw(T* pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2&&... args)
-	{
-		Bind<RawDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
-	}
-
-	//Bind a static/global function
-	template<typename... Args2>
-	inline void BindStatic(RetVal(*pFunction)(Args..., Args2...), Args2&&... args)
-	{
-		Bind<StaticDelegate<RetVal(Args...), Args2...>>(pFunction, std::forward<Args2>(args)...);
-	}
-
-	//Bind a lambda
-	template<typename LambdaType, typename... Args2>
-	inline void BindLambda(LambdaType&& lambda, Args2&&... args)
-	{
-		Bind<LambdaDelegate<LambdaType, RetVal(Args...), Args2...>>(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...);
-	}
-
-	//Bind a member function with a shared_ptr object
-	template<typename T, typename... Args2>
-	inline void BindSP(std::shared_ptr<T> pObject, RetVal(T::*pFunction)(Args..., Args2...), Args2&&... args)
-	{
-		Bind<SPDelegate<T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
-	}
-
-	//If the allocator has a size, it means it's bound to something
-	inline bool IsBound() const
-	{
-		return m_Allocator.HasAllocation();
-	}
-
-	RetVal ExecuteIfBound(Args&&... args) const
-	{
-		if (IsBound())
-		{
-			return GetDelegate()->Execute(std::forward<Args>(args)...);
-		}
-		return RetVal();
-	}
-
-	//Clear the bound delegate if it is bound to the given object.
-	//Ignored when pObject is a nullptr
-	inline void ClearIfBoundTo(void* pObject)
-	{
-		if (pObject != nullptr && IsBoundTo(pObject))
-		{
-			Release();
-		}
-	}
-};
+using SinglecastDelegate = Delegate<RetVal, Args...>;
+#endif
 
 //Delegate that can be bound to by MULTIPLE objects
 template<typename... Args>
 class MulticastDelegate
 {
 public:
-	using DelegateHandlerT = DelegateHandler<void, Args...>;
+	using DelegateT = Delegate<void, Args...>;
 
 private:
-	using DelegateHandlerPair = std::pair<DelegateHandle, DelegateHandlerT>;
+	using DelegateHandlerPair = std::pair<DelegateHandle, DelegateT>;
 
 public:
 	//Default constructor
@@ -640,9 +607,9 @@ public:
 	}
 
 	//Add delegate with the += operator
-	inline DelegateHandle operator+=(DelegateHandlerT&& handler) noexcept
+	inline DelegateHandle operator+=(DelegateT&& handler) noexcept
 	{
-		return Add(std::forward<DelegateHandlerT>(handler));
+		return Add(std::forward<DelegateT>(handler));
 	}
 
 	//Remove a delegate using its DelegateHandle
@@ -651,7 +618,7 @@ public:
 		return Remove(handle);
 	}
 
-	inline DelegateHandle Add(DelegateHandlerT&& handler) noexcept
+	inline DelegateHandle Add(DelegateT&& handler) noexcept
 	{
 		//Favour an empty space over a possible array reallocation
 		for (size_t i = 0; i < m_Events.size(); ++i)
@@ -670,28 +637,28 @@ public:
 	template<typename T, typename... Args2>
 	inline DelegateHandle AddRaw(T* pObject, void(T::*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		return Add(DelegateHandlerT::CreateRaw(pObject, pFunction, std::forward<Args2>(args)...));
+		return Add(DelegateT::CreateRaw(pObject, pFunction, std::forward<Args2>(args)...));
 	}
 
 	//Bind a static/global function
 	template<typename... Args2>
 	inline DelegateHandle AddStatic(void(*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		return Add(DelegateHandlerT::CreateStatic(pFunction, std::forward<Args2>(args)...));
+		return Add(DelegateT::CreateStatic(pFunction, std::forward<Args2>(args)...));
 	}
 
 	//Bind a lambda
 	template<typename LambdaType, typename... Args2>
 	inline DelegateHandle AddLambda(LambdaType&& lambda, Args2&&... args)
 	{
-		return Add(DelegateHandlerT::CreateLambda(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...));
+		return Add(DelegateT::CreateLambda(std::forward<LambdaType>(lambda), std::forward<Args2>(args)...));
 	}
 
 	//Bind a member function with a shared_ptr object
 	template<typename T, typename... Args2>
 	inline DelegateHandle AddSP(std::shared_ptr<T> pObject, void(T::*pFunction)(Args..., Args2...), Args2&&... args)
 	{
-		return Add(DelegateHandlerT::CreateSP(pObject, pFunction, std::forward<Args2>(args)...));
+		return Add(DelegateT::CreateSP(pObject, pFunction, std::forward<Args2>(args)...));
 	}
 
 	//Removes all handles that are bound from a specific object
@@ -797,7 +764,7 @@ public:
 	}
 
 	//Execute all functions that are bound
-	inline void Broadcast(Args&& ...args)
+	inline void Broadcast(Args... args)
 	{
 		Lock();
 		for (size_t i = 0; i < m_Events.size(); ++i)
@@ -829,7 +796,7 @@ private:
 	{
 		return m_Locks > 0;
 	}
-	
+
 	std::vector<DelegateHandlerPair> m_Events;
 	unsigned int m_Locks;
 };
