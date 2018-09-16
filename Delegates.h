@@ -6,16 +6,6 @@
 #include <vector>
 #include <tuple>
 
-//#define CPP_DELEGATES_TEST_LOGGING
-
-#ifdef CPP_DELEGATES_TEST_LOGGING
-#define STR(x) #x
-#define STRINGIFY(x) STR(x)
-#define LOG(msg, ...) printf("[" __FUNCTION__ ": " STRINGIFY(__LINE__) "] > " msg##"\n", __VA_ARGS__)
-#else
-#define LOG(msg, ...)
-#endif
-
 #define DECLARE_DELEGATE(name, ...) \
 using name = SinglecastDelegate<void, __VA_ARGS__>
 
@@ -49,7 +39,6 @@ public:
 		return nullptr;
 	}
 };
-
 
 template<typename RetVal, typename... Args2>
 class StaticDelegate;
@@ -232,6 +221,7 @@ public:
 	{
 		m_Id = -1;
 	}
+
 private:
 	__int64 m_Id;
 	static __int64 CURRENT_ID;
@@ -259,8 +249,6 @@ public:
 	InlineAllocator(const InlineAllocator& other)
 		: m_Size(0)
 	{
-		LOG("InlineAllocator Copy operator");
-
 		if (other.HasAllocation())
 		{
 			memcpy(Allocate(other.m_Size), other.GetAllocation(), other.m_Size);
@@ -271,8 +259,6 @@ public:
 	//Copy assignment operator
 	InlineAllocator& operator=(const InlineAllocator& other)
 	{
-		LOG("InlineAllocator Copy assignment operator");
-
 		if (other.HasAllocation())
 		{
 			memcpy(Allocate(other.m_Size), other.GetAllocation(), other.m_Size);
@@ -285,8 +271,6 @@ public:
 	InlineAllocator(InlineAllocator&& other) noexcept
 		: m_Size(other.m_Size)
 	{
-		LOG("InlineAllocator Move constructor");
-
 		other.m_Size = 0;
 		if (m_Size > MaxStackSize)
 		{
@@ -301,8 +285,6 @@ public:
 	//Move assignment operator
 	InlineAllocator& operator=(InlineAllocator&& other) noexcept
 	{
-		LOG("InlineAllocator Move assignment operator");
-
 		Free();
 		m_Size = other.m_Size;
 		other.m_Size = 0;
@@ -327,11 +309,9 @@ public:
 			m_Size = size;
 			if (size > MaxStackSize)
 			{
-				LOG("Heap allocation: %d", (int)size);
 				pPtr = new char[size];
 				return pPtr;
 			}
-			LOG("Stack allocation: %d", (int)size);
 		}
 		return (void*)Buffer;
 	}
@@ -341,7 +321,6 @@ public:
 	{
 		if (m_Size > MaxStackSize)
 		{
-			LOG("Heap deallocation: %d", (int)m_Size);
 			delete[] pPtr;
 		}
 		m_Size = 0;
@@ -391,13 +370,11 @@ public:
 	DelegateHandler(const DelegateHandler& other)
 		: m_Allocator(other.m_Allocator)
 	{
-		LOG("DelegateHandler copy constructor");
 	}
 
 	//Copy assignment operator
 	DelegateHandler& operator=(const DelegateHandler& other)
 	{
-		LOG("DelegateHandler copy assignment operator");
 		m_Allocator = other.m_Allocator;
 		return *this;
 	}
@@ -411,14 +388,11 @@ public:
 	DelegateHandler(DelegateHandler&& other) noexcept
 		: m_Allocator(std::move(other.m_Allocator))
 	{
-		LOG("DelegateHandler move constructor");
 	}
 
 	//Move assignment operator
 	DelegateHandler& operator=(DelegateHandler&& other) noexcept
 	{
-		LOG("DelegateHandler move assignment operator");
-
 		m_Allocator.Free();
 		m_Allocator = std::move(other.m_Allocator);
 		return *this;
@@ -522,7 +496,7 @@ protected:
 
 	inline IDelegateT* GetDelegate() const
 	{
-		return (IDelegateT*)(m_Allocator.GetAllocation());
+		return static_cast<IDelegateT*>(m_Allocator.GetAllocation());
 	}
 
 	//Allocator for the delegate itself.
@@ -548,14 +522,11 @@ public:
 	SinglecastDelegate(const SinglecastDelegate& other)
 		: DelegateHandlerT(other.m_Allocator)
 	{
-		LOG("SinglecastDelegate copy constructor");
 	}
 
 	//Copy assignment operator
 	SinglecastDelegate& operator=(const SinglecastDelegate& other)
 	{
-		LOG("SinglecastDelegate copy assignment operator");
-
 		m_Allocator = other.m_Allocator;
 		return *this;
 	}
@@ -564,14 +535,11 @@ public:
 	SinglecastDelegate(SinglecastDelegate&& other) noexcept
 		: DelegateHandlerT(std::move(other))
 	{
-		LOG("SinglecastDelegate move constructor");
 	}
 
 	//Move assignment operator
 	SinglecastDelegate& operator=(SinglecastDelegate&& other) noexcept
 	{
-		LOG("SinglecastDelegate move assignment operator");
-
 		m_Allocator = std::move(other.m_Allocator);
 		return *this;
 	}
@@ -667,6 +635,7 @@ public:
 	MulticastDelegate& operator=(MulticastDelegate&& other) noexcept
 	{
 		m_Events = std::move(other.m_Events);
+		m_Locks = std::move(other.m_Locks);
 		return *this;
 	}
 
@@ -776,6 +745,21 @@ public:
 		return false;
 	}
 
+	bool IsBoundTo(const DelegateHandle& handle) const
+	{
+		if (handle.IsValid())
+		{
+			for (size_t i = 0; i < m_Events.size(); ++i)
+			{
+				if (m_Events[i].first == handle)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	//Remove all the functions bound to the delegate
 	inline void RemoveAll()
 	{
@@ -845,7 +829,7 @@ private:
 	{
 		return m_Locks > 0;
 	}
-
+	
 	std::vector<DelegateHandlerPair> m_Events;
 	unsigned int m_Locks;
 };

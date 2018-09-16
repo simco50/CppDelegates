@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?> 
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 	<Type Name="MulticastDelegate&lt;*&gt;">
-		<DisplayString Condition="m_Events.size()==0">Unbound</DisplayString>
+		<DisplayString Condition="m_Locks == 0xcccccccc">Invalid</DisplayString>
+		<DisplayString Condition="m_Events.size() == 0">Unbound</DisplayString>
 		<DisplayString>Bound: {m_Events.size()}</DisplayString>
 		<Expand>
 			<Item Name="Elements" ExcludeView="simple">m_Events</Item>
@@ -9,19 +10,25 @@
 	</Type>
 	
 	<Type Name="DelegateHandler&lt;*&gt;">
-		<DisplayString Condition="m_Handle.m_Id==-1">Unbound</DisplayString>
-		<DisplayString Condition="m_Handle.m_Id&lt;0">Invalid</DisplayString>
-		<DisplayString>Bound [ID={m_Handle.m_Id}]</DisplayString>
+		<DisplayString Condition="m_Allocator.m_Size == 0">Unbound</DisplayString>
+		<DisplayString Condition="m_Allocator.m_Size == 0xcccccccccccccccc">Invalid</DisplayString>
+		<DisplayString>Bound</DisplayString>
 		<Expand>
 			<Item Name="Allocation" ExcludeView="simple">m_Allocator</Item>
-			<Item Name="Stack" ExcludeView="simple">(IDelegateT*)m_Allocator.Buffer</Item>
-			<Item Name="Heap" ExcludeView="simple">(IDelegateT*)m_Allocator.pPtr</Item>
+			<Item Name="Inline Memory" ExcludeView="simple">(IDelegateT*)m_Allocator.Buffer</Item>
+			<Item Name="Dynamic Memory" ExcludeView="simple">(IDelegateT*)m_Allocator.pPtr</Item>
 		</Expand>
 	</Type>
 
+	<Type Name="DelegateHandle">
+		<DisplayString Condition="m_Id &lt; -1">Invalid</DisplayString>
+		<DisplayString Condition="m_Id == -1">Unbound</DisplayString>
+		<DisplayString>Bound [ID: {m_Id}]</DisplayString>
+	</Type>
+
 	<Type Name="InlineAllocator&lt;*&gt;">
-		<DisplayString Condition="m_Size==0">Empty</DisplayString>
-		<DisplayString Condition="m_Size&gt;$T1">Heap: {m_Size} bytes</DisplayString>
-		<DisplayString Condition="m_Size&lt;=$T1">Stack: {m_Size} bytes</DisplayString>
+		<DisplayString Condition="m_Size == 0">Unallocated: {m_Size} bytes</DisplayString>
+		<DisplayString Condition="m_Size &gt; $T1">Dynamic Memory: {m_Size} bytes</DisplayString>
+		<DisplayString Condition="m_Size &lt;= $T1">Inline Memory: {m_Size} bytes</DisplayString>
 	</Type>
 </AutoVisualizer>

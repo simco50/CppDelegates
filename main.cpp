@@ -32,33 +32,56 @@ struct Foo
 	}
 };
 
+
 void SinglecastDelegateTest()
 {
 	START_TEST();
+	DECLARE_DELEGATE_RET(TestDelegate, int, float);
 
-	SinglecastDelegate<int, float> del;
-	del.BindLambda([](float a)
+	TestDelegate testDelegate;
+	testDelegate.BindLambda([](float a)
 	{
 		std::cout << "Lambda delegate parameter: " << a << std::endl;
 		return 10;
 	});
-	std::cout << "Lambda delegate return value: " << del.Execute(20) << std::endl;
+	std::cout << "Lambda delegate return value: " << testDelegate.Execute(20) << std::endl;
 
-	del.BindStatic(&Foo::StaticBarInt);
-	std::cout << "Static delegate return value: " << del.Execute(20) << std::endl;
+	testDelegate.BindStatic(&Foo::StaticBarInt);
+	std::cout << "Static delegate return value: " << testDelegate.Execute(20) << std::endl;
 
 	Foo foo;
-	del.BindRaw(&foo, &Foo::BarInt);
-	std::cout << "Raw delegate return value: " << del.Execute(20) << std::endl;
+	testDelegate.BindRaw(&foo, &Foo::BarInt);
+	std::cout << "Raw delegate return value: " << testDelegate.Execute(20) << std::endl;
 
 	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
-	del.BindSP(pFoo, &Foo::BarInt);
-	std::cout << "SP delegate return value: " << del.Execute(20) << std::endl;
+	testDelegate.BindSP(pFoo, &Foo::BarInt);
+	std::cout << "SP delegate return value: " << testDelegate.Execute(20) << std::endl;
 
+	char buffer[] = "Hello World";
+	testDelegate.BindLambda([buffer](float)
+	{
+		std::cout << buffer << std::endl;
+		return 0;
+	});
+	testDelegate.ExecuteIfBound(20);
 
-	SinglecastDelegate<int, float> led;
-	led = std::move(del);
-	led.Execute(10);
+	TestDelegate copyConstructed = testDelegate;
+	
+	copyConstructed.ExecuteIfBound(20);
+	testDelegate.ExecuteIfBound(20);
+
+	TestDelegate moveConstructed = std::move(copyConstructed);
+	moveConstructed.Execute(20);
+
+	TestDelegate copyAssigned;
+	copyAssigned = moveConstructed;
+
+	copyAssigned.Execute(20);
+	moveConstructed.Execute(20);
+
+	TestDelegate moveAssigned;
+	moveAssigned = std::move(copyAssigned);
+	moveAssigned.Execute(20);
 
 	END_TEST();
 }
@@ -66,31 +89,48 @@ void SinglecastDelegateTest()
 void MulticastDelegateTest()
 {
 	START_TEST();
+	DECLARE_MULTICAST_DELEGATE(Test, float);
 
-	MulticastDelegate<float> del;
-	/*del.AddLambda([](float a)
+	Test testDelegate;
+	testDelegate.AddLambda([](float a)
 	{
 		std::cout << "Lambda delegate parameter: " << a << std::endl;
 	});
 
-	del.AddStatic(&Foo::StaticBarVoid);
+	testDelegate.AddStatic(&Foo::StaticBarVoid);
 
 	Foo foo;
-	del.AddRaw(&foo, &Foo::BarVoid);*/
+	testDelegate.AddRaw(&foo, &Foo::BarVoid);
 
 	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
-	del.AddSP(pFoo, &Foo::BarVoid);
-	del.AddSP(pFoo, &Foo::BarVoid);
-	del.AddSP(pFoo, &Foo::BarVoid);
+	testDelegate.AddSP(pFoo, &Foo::BarVoid);
+	
+	testDelegate.Broadcast(20);
 
-	del.Broadcast(20);
+	Test copyConstructed = testDelegate;
 
-	MulticastDelegate<float> led;
-	led = del;
-	led.Broadcast(10);
+	copyConstructed.Broadcast(20);
+	testDelegate.Broadcast(20);
+
+	Test moveConstructed = std::move(copyConstructed);
+	moveConstructed.Broadcast(20);
+
+	Test copyAssigned;
+	copyAssigned = moveConstructed;
+
+	copyAssigned.Broadcast(20);
+	moveConstructed.Broadcast(20);
+
+	Test moveAssigned;
+	moveAssigned = std::move(copyAssigned);
+	moveAssigned.Broadcast(20);
+
+	DelegateHandle handle = moveAssigned += TestDelegate::CreateLambda([](float) {});
+	moveAssigned -= handle;
 
 	END_TEST();
 }
+
 
 int main()
 {
