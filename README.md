@@ -4,7 +4,7 @@ These are not standard in C++ but are a great way for communication and it's wid
 Unreal Engine is worth nothing as it has its own implementation of Delegates in C++ too.
 
 ## Classes ##
-- ```SinglecastDelegate<RetVal, Args>```
+- ```Delegate<RetVal, Args>```
 - ```MulticastDelegate<Args>```
 
 ## Features ##
@@ -19,10 +19,10 @@ Unreal Engine is worth nothing as it has its own implementation of Delegates in 
 
 ## Example Usage ##
 
-### SinglecastDelegate ###
+### Delegate ###
 
 ``` 
-SinglecastDelegate<int, float> del;
+Delegate<int, float> del;
 del.BindLambda([](float a, int payload)
 {
 	std::cout << "Lambda delegate parameter: " << a << std::endl;
