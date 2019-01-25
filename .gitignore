@@ -2,3 +2,4 @@
 *.sln
 *.vcxproj
 /Build
+*.vcxproj.user
