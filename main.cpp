@@ -2,8 +2,6 @@
 #include <iostream>
 #include <memory>
 
-#include <vld.h>
-
 #define START_TEST() \
 std::cout << "----- [" << __func__ << "] -----" << std::endl; { std::cout << std::endl \
 

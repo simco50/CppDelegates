@@ -5,19 +5,15 @@
 		<DisplayString Condition="m_Events.size() == 0">Unbound</DisplayString>
 		<DisplayString>Bound: {m_Events.size()}</DisplayString>
 		<Expand>
-			<Item Name="Elements" ExcludeView="simple">m_Events</Item>
+      <Item Name="Locked">m_Locks &gt; 0</Item>
+      <Item Name="Events">m_Events</Item>
 		</Expand>
 	</Type>
 	
-	<Type Name="DelegateHandler&lt;*&gt;">
-		<DisplayString Condition="m_Allocator.m_Size == 0">Unbound</DisplayString>
-		<DisplayString Condition="m_Allocator.m_Size == 0xcccccccccccccccc">Invalid</DisplayString>
-		<DisplayString>Bound</DisplayString>
-		<Expand>
-			<Item Name="Allocation" ExcludeView="simple">m_Allocator</Item>
-			<Item Name="Inline Memory" ExcludeView="simple">(IDelegateT*)m_Allocator.Buffer</Item>
-			<Item Name="Dynamic Memory" ExcludeView="simple">(IDelegateT*)m_Allocator.pPtr</Item>
-		</Expand>
+	<Type Name="Delegate&lt;*&gt;">
+    <DisplayString Condition="m_Allocator.m_Size &gt;= 0xcccccccc">Invalid</DisplayString>
+    <DisplayString Condition="m_Allocator.m_Size == 0">Unbound</DisplayString>
+    <DisplayString>Bound</DisplayString>
 	</Type>
 
 	<Type Name="DelegateHandle">
@@ -25,10 +21,16 @@
 		<DisplayString Condition="m_Id == -1">Unbound</DisplayString>
 		<DisplayString>Bound [ID: {m_Id}]</DisplayString>
 	</Type>
-
-	<Type Name="InlineAllocator&lt;*&gt;">
+  
+  <Type Name="InlineAllocator&lt;*&gt;">
+		<DisplayString Condition="m_Size &gt;= 0xcccccccc">Invalid</DisplayString>
 		<DisplayString Condition="m_Size == 0">Unallocated: {m_Size} bytes</DisplayString>
 		<DisplayString Condition="m_Size &gt; $T1">Dynamic Memory: {m_Size} bytes</DisplayString>
 		<DisplayString Condition="m_Size &lt;= $T1">Inline Memory: {m_Size} bytes</DisplayString>
+    <Expand>
+      <Item Name="Data" Condition="m_Size &gt; $T1">pPtr</Item>
+      <Item Name="Data" Condition="m_Size &lt;= $T1">(void*)Buffer</Item>
+      <Item Name="Size">m_Size</Item>
+    </Expand>
 	</Type>
 </AutoVisualizer>
