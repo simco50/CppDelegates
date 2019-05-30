@@ -6,7 +6,14 @@
 		<DisplayString>Bound: {m_Events.size()}</DisplayString>
 		<Expand>
       <Item Name="Locked">m_Locks &gt; 0</Item>
-      <Item Name="Events">m_Events</Item>
+      <CustomListItems MaxItemsPerView="100">
+        <Variable Name="i" InitialValue="0" />
+        <Size>m_Events.size()</Size>
+        <Loop>
+          <Item>m_Events[i].second.m_Allocator</Item>
+          <Exec>i++</Exec>
+        </Loop>
+      </CustomListItems>
 		</Expand>
 	</Type>
 	
