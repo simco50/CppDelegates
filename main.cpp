@@ -1,153 +1,231 @@
 #include "Delegates.h"
-#include <iostream>
 #include <memory>
+#include <array>
 
-#define START_TEST() \
-std::cout << "----- [" << __func__ << "] -----" << std::endl; { std::cout << std::endl \
+#define CATCH_CONFIG_MAIN
+#include "catch.hpp"
 
-#define END_TEST() \
-std::cout << std::endl; } std::cout << std::endl << "------------------------------------" << std::endl << std::endl
-
-struct Foo
+TEST_CASE("Delegate", "Simple Delegate")
 {
-	static void StaticBarVoid(float a)
-	{
-		std::cout << "Static delegate parameter: " << a << std::endl;
-	}
-	static int StaticBarInt(float a)
-	{
-		std::cout << "Static delegate parameter: " << a << std::endl;
-		return 10;
-	}
-	void BarVoid(float a)
-	{
-		std::cout << "Delegate parameter: " << a << std::endl;
-	}
-	int BarInt(float a)
-	{
-		std::cout << "Delegate parameter: " << a << std::endl;
-		return 10;
-	}
-	int BarIntConst(float a) const
-	{
-		std::cout << "Delegate parameter: " << a << std::endl;
-		return 10;
-	}
-	void BarVoidConst(float a) const
-	{
-		std::cout << "Delegate parameter: " << a << std::endl;
-	}
-};
-
-
-void SinglecastDelegateTest()
-{
-	START_TEST();
-	DECLARE_DELEGATE_RET(TestDelegate, int, float);
-
+	DECLARE_DELEGATE_RET(TestDelegate, float, float);
 	TestDelegate testDelegate;
-	testDelegate.BindLambda([](float a)
+
+	REQUIRE_FALSE(testDelegate.IsBound());
+
+	SECTION("Lambda")
 	{
-		std::cout << "Lambda delegate parameter: " << a << std::endl;
-		return 10;
-	});
-	std::cout << "Lambda delegate return value: " << testDelegate.Execute(20) << std::endl;
+		testDelegate.BindLambda([](float a)
+			{
+				return 10 * a;
+			});
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+	}
 
-	testDelegate.BindStatic(&Foo::StaticBarInt);
-	std::cout << "Static delegate return value: " << testDelegate.Execute(20) << std::endl;
-
-	Foo foo;
-	testDelegate.BindRaw(&foo, &Foo::BarInt);
-	std::cout << "Raw delegate return value: " << testDelegate.Execute(20) << std::endl;
-
-	testDelegate.BindRaw(&foo, &Foo::BarIntConst);
-
-	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
-	testDelegate.BindSP(pFoo, &Foo::BarInt);
-	std::cout << "SP delegate return value: " << testDelegate.Execute(20) << std::endl;
-
-	testDelegate.BindSP(pFoo, &Foo::BarIntConst);
-	std::cout << "SP delegate return value: " << testDelegate.Execute(20) << std::endl;
-
-	char buffer[] = "Hello World";
-	testDelegate.BindLambda([buffer](float)
+	SECTION("Large Lambda")
 	{
-		std::cout << buffer << std::endl;
-		return 0;
-	});
-	testDelegate.ExecuteIfBound(20);
+		std::array<char, 1024> largeBuffer{};
+		largeBuffer[0] = 10;
+		testDelegate.BindLambda([largeBuffer](float a)
+			{
+				return largeBuffer[0] * a;
+			});
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+		REQUIRE(testDelegate.GetSize() >= 1024);
+	}
 
-	TestDelegate copyConstructed = testDelegate;
-	
-	copyConstructed.ExecuteIfBound(20);
-	testDelegate.ExecuteIfBound(20);
+	SECTION("Raw")
+	{
+		struct Foo
+		{
+			float Bar(float a)
+			{
+				return 10 * a;
+			}
+		};
+		Foo foo;
+		testDelegate.BindRaw(&foo, &Foo::Bar);
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+	}
 
-	TestDelegate moveConstructed = std::move(copyConstructed);
-	moveConstructed.Execute(20);
+	SECTION("Raw Const")
+	{
+		struct Foo
+		{
+			float Bar(float a) const
+			{
+				return 10 * a;
+			}
+		};
+		Foo foo;
+		testDelegate.BindRaw(&foo, &Foo::Bar);
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+	}
 
-	TestDelegate copyAssigned;
-	copyAssigned = moveConstructed;
+	SECTION("Static")
+	{
+		struct Foo
+		{
+			static float Bar(float a)
+			{
+				return 10 * a;
+			}
+		};
+		testDelegate.BindStatic(&Foo::Bar);
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+	}
 
-	copyAssigned.Execute(20);
-	moveConstructed.Execute(20);
+	SECTION("SP")
+	{
+		struct Foo
+		{
+			float Bar(float a)
+			{
+				return 10 * a;
+			}
+		};
+		std::shared_ptr<Foo> foo = std::make_shared<Foo>();
+		testDelegate.BindSP(foo, &Foo::Bar);
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+	}
 
-	TestDelegate moveAssigned;
-	moveAssigned = std::move(copyAssigned);
-	moveAssigned.Execute(20);
-
-	END_TEST();
+	SECTION("SP Const")
+	{
+		struct Foo
+		{
+			float Bar(float a) const
+			{
+				return 10 * a;
+			}
+		};
+		std::shared_ptr<Foo> foo = std::make_shared<Foo>();
+		testDelegate.BindSP(foo, &Foo::Bar);
+		REQUIRE(testDelegate.IsBound());
+		REQUIRE(testDelegate.Execute(10) == 100);
+	}
 }
 
-void MulticastDelegateTest()
+TEST_CASE("Multicast Delegate", "Simple")
 {
-	START_TEST();
-	DECLARE_MULTICAST_DELEGATE(Test, float);
-
+	DECLARE_MULTICAST_DELEGATE(Test, int);
 	Test testDelegate;
-	testDelegate.AddLambda([](float a)
+
+	using ValueArray = std::array<int, 64>;
+	ValueArray values{};
+
+	SECTION("Lambda - Reference")
 	{
-		std::cout << "Lambda delegate parameter: " << a << std::endl;
-	});
+		testDelegate.AddLambda([&values](int a)
+			{
+				values[a] = a;
+			});
+		REQUIRE(values[10] == 0);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+	}
 
-	testDelegate.AddStatic(&Foo::StaticBarVoid);
+	SECTION("Lambda Many - Reference")
+	{
+		testDelegate.AddLambda([&values](int a)
+			{
+				values[a] = a;
+			});
+		testDelegate.AddLambda([&values](int a)
+			{
+				values[a + 1] = a;
+			});
+		testDelegate.AddLambda([&values](int a)
+			{
+				values[a + 2] = a;
+			});
+		REQUIRE(values[10] == 0);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+		REQUIRE(values[11] == 10);
+		REQUIRE(values[12] == 10);
+	}
 
-	Foo foo;
-	testDelegate.AddRaw(&foo, &Foo::BarVoid);
-	testDelegate.AddRaw(&foo, &Foo::BarVoidConst);
+	SECTION("Lambda - Value")
+	{
+		testDelegate.AddLambda([values](int a) mutable
+			{
+				values[a] = a;
+			});
+		REQUIRE(values[10] == 0);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 0);
+	}
 
-	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
-	testDelegate.AddSP(pFoo, &Foo::BarVoid);
-	testDelegate.AddSP(pFoo, &Foo::BarVoidConst);
-	
-	testDelegate.Broadcast(20);
+	SECTION("Raw")
+	{
+		struct Foo
+		{
+			Foo(ValueArray& v) : Values(v) {}
+			void Bar(int a)
+			{
+				Values[a] = a;
+			}
+			ValueArray& Values;
+		};
+		Foo foo(values);
+		testDelegate.AddRaw(&foo, &Foo::Bar);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+	}
 
-	Test copyConstructed = testDelegate;
+	SECTION("Raw Const")
+	{
+		struct Foo
+		{
+			Foo(ValueArray& v) : Values(v) {}
+			void Bar(int a) const
+			{
+				Values[a] = a;
+			}
+			ValueArray& Values;
+		};
+		Foo foo(values);
+		testDelegate.AddRaw(&foo, &Foo::Bar);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+	}
 
-	copyConstructed.Broadcast(20);
-	testDelegate.Broadcast(20);
+	SECTION("SP")
+	{
+		struct Foo
+		{
+			Foo(ValueArray& v) : Values(v) {}
+			void Bar(int a)
+			{
+				Values[a] = a;
+			}
+			ValueArray& Values;
+		};
+		std::shared_ptr<Foo> foo = std::make_shared<Foo>(values);
+		testDelegate.AddSP(foo, &Foo::Bar);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+	}
 
-	Test moveConstructed = std::move(copyConstructed);
-	moveConstructed.Broadcast(20);
-
-	Test copyAssigned;
-	copyAssigned = moveConstructed;
-
-	copyAssigned.Broadcast(20);
-	moveConstructed.Broadcast(20);
-
-	Test moveAssigned;
-	moveAssigned = std::move(copyAssigned);
-	moveAssigned.Broadcast(20);
-
-	DelegateHandle handle = moveAssigned += TestDelegate::CreateLambda([](float) {});
-	moveAssigned -= handle;
-
-	END_TEST();
-}
-
-
-int main()
-{
-	SinglecastDelegateTest();
-	MulticastDelegateTest();
+	SECTION("SP Const")
+	{
+		struct Foo
+		{
+			Foo(ValueArray& v) : Values(v) {}
+			void Bar(int a)
+			{
+				Values[a] = a;
+			}
+			ValueArray& Values;
+		};
+		std::shared_ptr<Foo> foo = std::make_shared<Foo>(values);
+		testDelegate.AddSP(foo, &Foo::Bar);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+	}
 }

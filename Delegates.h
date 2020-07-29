@@ -5,6 +5,11 @@
 #ifndef CPP_DELEGATES
 #define CPP_DELEGATES
 
+//The inline allocation size of delegate data.
+//Delegates larger than this will be heap allocated.
+constexpr const int DELEGATE_INLINE_ALLOCATION_SIZE = 32;
+
+
 #define DECLARE_DELEGATE(name, ...) \
 using name = Delegate<void, __VA_ARGS__>
 
@@ -25,20 +30,23 @@ private: \
 	using MulticastDelegate::Remove; \
 };
 
-template<bool IsConst, typename Object, typename RetVal, typename ...Args>
-struct MemberFunction;
-
-template<typename Object, typename RetVal, typename ...Args>
-struct MemberFunction<true, Object, RetVal, Args...>
+namespace _DelegatesInteral
 {
-	using Type = RetVal(Object::*)(Args...) const;
-};
+	template<bool IsConst, typename Object, typename RetVal, typename ...Args>
+	struct MemberFunction;
 
-template<typename Object, typename RetVal, typename ...Args>
-struct MemberFunction<false, Object, RetVal, Args...>
-{
-	using Type = RetVal(Object::*)(Args...);
-};
+	template<typename Object, typename RetVal, typename ...Args>
+	struct MemberFunction<true, Object, RetVal, Args...>
+	{
+		using Type = RetVal(Object::*)(Args...) const;
+	};
+
+	template<typename Object, typename RetVal, typename ...Args>
+	struct MemberFunction<false, Object, RetVal, Args...>
+	{
+		using Type = RetVal(Object::*)(Args...);
+	};
+}
 
 //Base type for delegates
 template<typename RetVal, typename... Args>
@@ -88,7 +96,7 @@ template<bool IsConst, typename T, typename RetVal, typename... Args, typename..
 class RawDelegate<IsConst, T, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args...>
 {
 public:
-	using DelegateFunction = typename MemberFunction<IsConst, T, RetVal, Args..., Args2...>::Type;
+	using DelegateFunction = typename _DelegatesInteral::MemberFunction<IsConst, T, RetVal, Args..., Args2...>::Type;
 
 	RawDelegate(T* pObject, DelegateFunction function, Args2&&... args)
 		: m_pObject(pObject), m_Function(function), m_Payload(std::forward<Args2>(args)...)
@@ -148,7 +156,7 @@ template<bool IsConst, typename RetVal, typename T, typename... Args, typename..
 class SPDelegate<IsConst, T, RetVal(Args...), Args2...> : public IDelegate<RetVal, Args...>
 {
 public:
-	using DelegateFunction = typename MemberFunction<IsConst, T, RetVal, Args..., Args2...>::Type;
+	using DelegateFunction = typename _DelegatesInteral::MemberFunction<IsConst, T, RetVal, Args..., Args2...>::Type;
 
 	SPDelegate(const std::shared_ptr<T>& pObject, DelegateFunction pFunction, Args2&&... args) :
 		m_pObject(pObject),
@@ -338,7 +346,7 @@ public:
 			m_Size = size;
 			if (size > MaxStackSize)
 			{
-				pPtr = new char[size];
+				pPtr = malloc(size);
 				return pPtr;
 			}
 		}
@@ -350,7 +358,7 @@ public:
 	{
 		if (m_Size > MaxStackSize)
 		{
-			delete[] (char*)pPtr;
+			free(pPtr);
 		}
 		m_Size = 0;
 	}
@@ -366,6 +374,11 @@ public:
 		{
 			return nullptr;
 		}
+	}
+
+	size_t GetSize() const
+	{
+		return m_Size;
 	}
 
 	inline bool HasAllocation() const
@@ -393,6 +406,12 @@ private:
 template<typename RetVal, typename... Args>
 class Delegate
 {
+private:
+	template<typename T, typename... Args2>
+	using ConstMemberFunction = typename _DelegatesInteral::MemberFunction<true, T, RetVal, Args..., Args2...>::Type;
+	template<typename T, typename... Args2>
+	using NonConstMemberFunction = typename _DelegatesInteral::MemberFunction<false, T, RetVal, Args..., Args2...>::Type;
+
 public:
 	using IDelegateT = IDelegate<RetVal, Args...>;
 
@@ -438,7 +457,7 @@ public:
 
 	//Create delegate using member function
 	template<typename T, typename... Args2>
-	static Delegate CreateRaw(T* pObj, typename MemberFunction<false, T, RetVal, Args..., Args2...>::Type pFunction, Args2... args)
+	static Delegate CreateRaw(T* pObj, NonConstMemberFunction<T, Args2...> pFunction, Args2... args)
 	{
 		Delegate handler;
 		handler.Bind<RawDelegate<false, T, RetVal(Args...), Args2...>>(pObj, pFunction, std::forward<Args2>(args)...);
@@ -446,7 +465,7 @@ public:
 	}
 
 	template<typename T, typename... Args2>
-	static Delegate CreateRaw(T* pObj, typename MemberFunction<true, T, RetVal, Args..., Args2...>::Type pFunction, Args2... args)
+	static Delegate CreateRaw(T* pObj, ConstMemberFunction<T, Args2...> pFunction, Args2... args)
 	{
 		Delegate handler;
 		handler.Bind<RawDelegate<true, T, RetVal(Args...), Args2...>>(pObj, pFunction, std::forward<Args2>(args)...);
@@ -464,7 +483,7 @@ public:
 
 	//Create delegate using std::shared_ptr
 	template<typename T, typename... Args2>
-	static Delegate CreateSP(const std::shared_ptr<T>& pObject, typename MemberFunction<false, T, RetVal, Args..., Args2...>::Type pFunction, Args2... args)
+	static Delegate CreateSP(const std::shared_ptr<T>& pObject, NonConstMemberFunction<T, Args2...> pFunction, Args2... args)
 	{
 		Delegate handler;
 		handler.Bind<SPDelegate<false, T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
@@ -472,7 +491,7 @@ public:
 	}
 
 	template<typename T, typename... Args2>
-	static Delegate CreateSP(const std::shared_ptr<T>& pObject, typename MemberFunction<true, T, RetVal, Args..., Args2...>::Type pFunction, Args2... args)
+	static Delegate CreateSP(const std::shared_ptr<T>& pObject, ConstMemberFunction<T, Args2...> pFunction, Args2... args)
 	{
 		Delegate handler;
 		handler.Bind<SPDelegate<true, T, RetVal(Args...), Args2...>>(pObject, pFunction, std::forward<Args2>(args)...);
@@ -490,14 +509,14 @@ public:
 
 	//Bind a member function
 	template<typename T, typename... Args2>
-	inline void BindRaw(T* pObject, typename MemberFunction<false, T, RetVal, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline void BindRaw(T* pObject, NonConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		static_assert(!std::is_const<T>::value, "Cannot bind a non-const function on a const object");
 		*this = CreateRaw<T, Args2... >(pObject, pFunction, std::forward<Args2>(args)...);
 	}
 
 	template<typename T, typename... Args2>
-	inline void BindRaw(T* pObject, typename MemberFunction<true, T, RetVal, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline void BindRaw(T* pObject, ConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		*this = CreateRaw<T, Args2... >(pObject, pFunction, std::forward<Args2>(args)...);
 	}
@@ -518,13 +537,13 @@ public:
 
 	//Bind a member function with a shared_ptr object
 	template<typename T, typename... Args2>
-	inline void BindSP(std::shared_ptr<T> pObject, typename MemberFunction<false, T, RetVal, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline void BindSP(std::shared_ptr<T> pObject, NonConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		*this = CreateSP<T, Args2... >(pObject, pFunction, std::forward<Args2>(args)...);
 	}
 
 	template<typename T, typename... Args2>
-	inline void BindSP(std::shared_ptr<T> pObject, typename MemberFunction<true, T, RetVal, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline void BindSP(std::shared_ptr<T> pObject, ConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		*this = CreateSP<T, Args2... >(pObject, pFunction, std::forward<Args2>(args)...);
 	}
@@ -563,6 +582,11 @@ public:
 		return nullptr;
 	}
 
+	size_t GetSize() const
+	{
+		return m_Allocator.GetSize();
+	}
+
 	//Clear the bound delegate if it is bound to the given object.
 	//Ignored when pObject is a nullptr
 	inline void ClearIfBoundTo(void* pObject)
@@ -586,13 +610,6 @@ public:
 			return false;
 		}
 		return GetDelegate()->GetOwner() == pObject;
-	}
-
-	//Determines the stack size the inline allocator can use
-	//This is a public function so it can easily be requested
-	constexpr static __int32 GetAllocatorStackSize()
-	{
-		return 32;
 	}
 
 private:
@@ -621,7 +638,7 @@ private:
 	//Allocator for the delegate itself.
 	//Delegate gets allocated inline when its is smaller or equal than 64 bytes in size.
 	//Can be changed by preference
-	InlineAllocator<Delegate::GetAllocatorStackSize()> m_Allocator;
+	InlineAllocator<DELEGATE_INLINE_ALLOCATION_SIZE> m_Allocator;
 };
 
 //Delegate that can be bound to by MULTIPLE objects
@@ -633,6 +650,10 @@ public:
 
 private:
 	using DelegateHandlerPair = std::pair<DelegateHandle, DelegateT>;
+	template<typename T, typename... Args2>
+	using ConstMemberFunction = typename _DelegatesInteral::MemberFunction<true, T, void, Args..., Args2...>::Type;
+	template<typename T, typename... Args2>
+	using NonConstMemberFunction = typename _DelegatesInteral::MemberFunction<false, T, void, Args..., Args2...>::Type;
 
 public:
 	//Default constructor
@@ -694,13 +715,13 @@ public:
 
 	//Bind a member function
 	template<typename T, typename... Args2>
-	inline DelegateHandle AddRaw(T* pObject, typename MemberFunction<false, T, void, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline DelegateHandle AddRaw(T* pObject, NonConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		return Add(DelegateT::CreateRaw(pObject, pFunction, std::forward<Args2>(args)...));
 	}
 
 	template<typename T, typename... Args2>
-	inline DelegateHandle AddRaw(T* pObject, typename MemberFunction<true, T, void, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline DelegateHandle AddRaw(T* pObject, ConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		return Add(DelegateT::CreateRaw(pObject, pFunction, std::forward<Args2>(args)...));
 	}
@@ -721,13 +742,13 @@ public:
 
 	//Bind a member function with a shared_ptr object
 	template<typename T, typename... Args2>
-	inline DelegateHandle AddSP(std::shared_ptr<T> pObject, typename MemberFunction<false, T, void, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline DelegateHandle AddSP(std::shared_ptr<T> pObject, NonConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		return Add(DelegateT::CreateSP(pObject, pFunction, std::forward<Args2>(args)...));
 	}
 
 	template<typename T, typename... Args2>
-	inline DelegateHandle AddSP(std::shared_ptr<T> pObject, typename MemberFunction<true, T, void, Args..., Args2...>::Type pFunction, Args2&&... args)
+	inline DelegateHandle AddSP(std::shared_ptr<T> pObject, ConstMemberFunction<T, Args2...> pFunction, Args2&&... args)
 	{
 		return Add(DelegateT::CreateSP(pObject, pFunction, std::forward<Args2>(args)...));
 	}
