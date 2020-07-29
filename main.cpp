@@ -28,6 +28,15 @@ struct Foo
 		std::cout << "Delegate parameter: " << a << std::endl;
 		return 10;
 	}
+	int BarIntConst(float a) const
+	{
+		std::cout << "Delegate parameter: " << a << std::endl;
+		return 10;
+	}
+	void BarVoidConst(float a) const
+	{
+		std::cout << "Delegate parameter: " << a << std::endl;
+	}
 };
 
 
@@ -51,8 +60,13 @@ void SinglecastDelegateTest()
 	testDelegate.BindRaw(&foo, &Foo::BarInt);
 	std::cout << "Raw delegate return value: " << testDelegate.Execute(20) << std::endl;
 
+	testDelegate.BindRaw(&foo, &Foo::BarIntConst);
+
 	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
 	testDelegate.BindSP(pFoo, &Foo::BarInt);
+	std::cout << "SP delegate return value: " << testDelegate.Execute(20) << std::endl;
+
+	testDelegate.BindSP(pFoo, &Foo::BarIntConst);
 	std::cout << "SP delegate return value: " << testDelegate.Execute(20) << std::endl;
 
 	char buffer[] = "Hello World";
@@ -99,9 +113,11 @@ void MulticastDelegateTest()
 
 	Foo foo;
 	testDelegate.AddRaw(&foo, &Foo::BarVoid);
+	testDelegate.AddRaw(&foo, &Foo::BarVoidConst);
 
 	std::shared_ptr<Foo> pFoo = std::make_shared<Foo>();
 	testDelegate.AddSP(pFoo, &Foo::BarVoid);
+	testDelegate.AddSP(pFoo, &Foo::BarVoidConst);
 	
 	testDelegate.Broadcast(20);
 
