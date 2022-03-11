@@ -384,6 +384,50 @@ TEST_CASE("Multicast Delegate", "Simple")
 	}
 }
 
+TEST_CASE("Multicast Delegate Removes", "Simple")
+{
+	DECLARE_MULTICAST_DELEGATE(Test, int);
+	Test testDelegate;
+
+	using ValueArray = std::array<int, 64>;
+	ValueArray values{};
+
+	SECTION("Handle")
+	{
+		DelegateHandle handle = testDelegate.AddLambda([&values](int a)
+			{
+				values[a] = a;
+			});
+		REQUIRE(values[10] == 0);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+		testDelegate.Remove(handle);
+		testDelegate.Broadcast(20);
+		REQUIRE(values[10] == 10);
+	}
+
+	SECTION("Raw")
+	{
+		struct Foo
+		{
+			Foo(ValueArray& v) : Values(v) {}
+			void Bar(int a)
+			{
+				Values[a] = a;
+			}
+			ValueArray& Values;
+		};
+		Foo foo(values);
+		testDelegate.AddRaw(&foo, &Foo::Bar);
+		REQUIRE(values[10] == 0);
+		testDelegate.Broadcast(10);
+		REQUIRE(values[10] == 10);
+		testDelegate.RemoveObject(&foo);
+		testDelegate.Broadcast(20);
+		REQUIRE(values[10] == 10);
+	}
+}
+
 TEST_CASE("Multicase Delegate Inits", "Delegate Constructor/Copying/Moving")
 {
 	DECLARE_MULTICAST_DELEGATE(TestDelegate);
